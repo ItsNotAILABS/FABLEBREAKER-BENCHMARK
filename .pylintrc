@@ -1,0 +1,37 @@
+[MAIN]
+# Minimum Python version to use for version-dependent checks.
+py-version = 3.8
+
+[MESSAGES CONTROL]
+# Disable checks that are not appropriate for this benchmark project.
+# - duplicate-code: benchmark-certification suite intentionally mirrors source files
+# - missing-module-docstring, missing-class-docstring, missing-function-docstring:
+#   benchmark harness code is self-explanatory
+# - line-too-long: some expressions are clearer on one line
+# - too-many-return-statements, too-many-branches, too-many-statements,
+#   too-many-locals: the AST evaluator is inherently complex
+# - too-few-public-methods: dataclass-style objects
+# - invalid-name: HTTP handler methods (do_GET, do_POST) follow BaseHTTPRequestHandler convention
+# - consider-using-max-builtin: existing pattern is explicit and clear
+# - broad-exception-caught: benchmark harness must catch all candidate exceptions
+# - subprocess-run-check: handled via wrapper function
+# - redefined-builtin: minor shadowing in local scope
+disable =
+    duplicate-code,
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    line-too-long,
+    too-many-return-statements,
+    too-many-branches,
+    too-many-statements,
+    too-many-locals,
+    too-few-public-methods,
+    invalid-name,
+    consider-using-max-builtin,
+    broad-exception-caught,
+    subprocess-run-check,
+    redefined-builtin
+
+[FORMAT]
+max-line-length = 140
