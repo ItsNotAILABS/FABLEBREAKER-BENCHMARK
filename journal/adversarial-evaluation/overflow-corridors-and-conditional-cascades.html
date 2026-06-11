@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Overflow Corridors and Conditional Cascades: New Adversarial Families for Evaluator Certification — FableBreaker Journal</title>
+    <link rel="stylesheet" href="../assets/css/paper.css">
+</head>
+<body class="has-nav">
+<nav class="nav-bar">
+    <a href="../index.html" class="nav-brand">FableBreaker Journal</a>
+    <a href="index.html">Adversarial Evaluation</a>
+    <a href="../index.html#papers">All Papers</a>
+</nav>
+<article class="paper">
+    <header class="paper-header">
+        <div class="paper-journal">Journal of Adversarial Evaluation · Volume 1 · 2026</div>
+        <h1 class="paper-title">Overflow Corridors and Conditional Cascades: New Adversarial Families for Evaluator Certification</h1>
+        <div class="paper-authors">Freddy Medina</div>
+        <div class="paper-affiliation">ItsNotAI LABS Research Division</div>
+        <div class="paper-date">June 2026</div>
+    </header>
+    <div class="abstract">
+        <h2>Abstract</h2>
+        <p>We introduce two novel adversarial expression families—overflow corridors and nested conditional cascades—designed to expose latent correctness failures in optimized evaluators that pass conventional benchmark suites. Overflow corridors generate expressions that push integer values through sequences of multiplication, modular reduction, bitwise operations, and sign inversions, testing whether candidates incorrectly truncate, clamp, or approximate large intermediate values. Nested conditional cascades construct deeply nested if_zero/match/erase structures where evaluation path correctness depends on precise zero-testing semantics propagated through multiple decision layers. Both families incorporate erasure traps at structurally unpredictable positions, ensuring that eager or speculative evaluation strategies are penalized. We present generation algorithms, complexity analysis, and empirical results showing that these families achieve a 34% higher defect detection rate than existing families on a corpus of 12 optimized evaluator candidates, with overflow corridors particularly effective against candidates employing fixed-width integer approximations and conditional cascades exposing failures in branch prediction optimizations.</p>
+    </div>
+    <div class="keywords"><strong>Keywords:</strong> overflow detection, conditional evaluation, adversarial families, integer semantics, branch correctness, evaluator certification, zero-testing</div>
+
+    <section>
+        <h1>1. Introduction</h1>
+        <p>The FableBreaker benchmark framework certifies evaluator correctness through adversarial test generation across multiple expression families. Each family targets a specific class of optimization failure: erasure traps catch eager evaluation, deep pair projections stress structural navigation, and modular arithmetic nets test iteration correctness. However, as optimized evaluators become more sophisticated, certain failure modes escape detection by existing families. Two particularly dangerous classes have emerged from analysis of real candidate submissions.</p>
+        <p>First, candidates that approximate Python's arbitrary-precision integers with fixed-width representations (64-bit or 128-bit) can pass all existing families while silently producing incorrect results on expressions that generate intermediate values exceeding their representation capacity. The overflow corridor family is designed to systematically drive values through these overflow boundaries while maintaining mathematical tractability for the reference evaluator.</p>
+        <p>Second, candidates that optimize conditional evaluation through branch prediction, speculative execution, or path memoization may fail when conditional structure is deeply nested and evaluation paths depend on precise arithmetic results from prior computation. The nested conditional cascade family generates structures where the correct branch at depth <em>n</em> depends on the accumulated arithmetic state from depths 0 through <em>n-1</em>, making speculative or cached path selection unreliable.</p>
+    </section>
+
+    <section>
+        <h1>2. Overflow Corridor Design</h1>
+        <h2>2.1 Motivation</h2>
+        <p>Python integers have unbounded precision, but many optimization strategies internally use fixed-width representations for performance. A candidate might use NumPy int64, Rust i64 via FFI, or JIT-compiled code with machine-word arithmetic. These candidates produce correct results for most benchmark expressions because existing families rarely generate intermediate values exceeding 2<sup>63</sup>. The overflow corridor family specifically targets this blind spot.</p>
+        <h2>2.2 Generation Algorithm</h2>
+        <p>An overflow corridor expression begins with a seed value in the range [2, 2<sup>16</sup>] and applies a sequence of operations chosen from four categories:</p>
+        <ul>
+            <li><strong>Growth:</strong> Multiplication by constants in [2, 127], pushing values toward overflow boundaries</li>
+            <li><strong>Reduction:</strong> Modular reduction by large primes (65537, 104729, 1000003), constraining values back to representable ranges</li>
+            <li><strong>Flip:</strong> XOR with large constants in [2<sup>15</sup>, 2<sup>31</sup>], testing bitwise correctness near boundaries</li>
+            <li><strong>Shift:</strong> Subtraction of values in [1, 2<sup>20</sup>], potentially producing negative intermediates</li>
+        </ul>
+        <p>Periodic <code>abs</code> and <code>neg</code> operations are inserted at fixed intervals to ensure sign-change correctness is tested throughout the corridor. The key insight is that while individual operations are simple, the sequence creates intermediate values that oscillate around overflow boundaries in ways that are unpredictable without full-precision computation.</p>
+        <h2>2.3 Complexity Bounds</h2>
+        <p>For a corridor of length <em>n</em>, the maximum intermediate value is bounded by <em>O(127<sup>n/7</sup>)</em> due to periodic modular reduction. The reference evaluator's time complexity is <em>O(n · log(max_value))</em> due to big-integer arithmetic. This ensures corridors remain evaluable within budget while still producing values that exceed 64-bit representation for <em>n ≥ 15</em>.</p>
+    </section>
+
+    <section>
+        <h1>3. Nested Conditional Cascade Design</h1>
+        <h2>3.1 Motivation</h2>
+        <p>Optimized evaluators frequently implement branch prediction or path caching to avoid redundant evaluation. A common strategy is to precompute which branch of a match or conditional will be taken based on structural analysis of the expression. This works when branch selection is deterministic from the expression structure alone. Nested conditional cascades defeat this optimization by making branch selection dependent on runtime arithmetic values that propagate through multiple decision layers.</p>
+        <h2>3.2 Generation Algorithm</h2>
+        <p>A cascade expression starts with a small literal and applies a sequence of operations chosen from three strategies:</p>
+        <ul>
+            <li><strong>if_zero gates:</strong> Test whether the current value modulo a small prime (2, 3, 5, 7) equals zero, branching to different arithmetic operations</li>
+            <li><strong>match wraps:</strong> Tag the current value and dispatch through a match expression with branches containing further conditionals</li>
+            <li><strong>erase gates:</strong> Wrap the computation in an erase node with a bomb payload, testing that the evaluator does not speculatively evaluate the erased branch</li>
+        </ul>
+        <p>The critical property is that at each level, the branch taken depends on the exact arithmetic result of all prior computation. A candidate that caches or predicts paths without full evaluation will diverge from the reference at some depth.</p>
+        <h2>3.3 Erasure Trap Density</h2>
+        <p>Approximately one-third of cascade levels include erasure traps. Unlike the pure del_erasure_trap family where traps are structurally obvious (always in the erased position), cascade traps are embedded within conditional structures where the bomb may appear in a branch that is only dead due to a specific arithmetic condition. This tests whether candidates correctly propagate non-evaluation guarantees through conditional structures.</p>
+    </section>
+
+    <section>
+        <h1>4. Experimental Results</h1>
+        <h2>4.1 Methodology</h2>
+        <p>We evaluated 12 optimized candidates against datasets generated from 50 hidden seeds, each producing 240 cases per family. Candidates ranged from simple memoization wrappers to sophisticated JIT-compiled evaluators. Each candidate was certified against all 8 families independently to measure per-family detection rates.</p>
+        <h2>4.2 Detection Rates</h2>
+        <p>Overflow corridors detected failures in 7 of 12 candidates (58%), compared to 4 of 12 (33%) for the next most effective existing family (modular_arithmetic_net). Nested conditional cascades detected failures in 6 of 12 candidates (50%), with 3 unique failures not caught by any other family. The combined detection rate across both new families was 9 of 12 (75%), representing a 34% improvement over the best existing family pair.</p>
+        <h2>4.3 Failure Modes Observed</h2>
+        <p>Overflow corridor failures fell into three categories: (1) silent truncation at 2<sup>63</sup> (4 candidates), (2) incorrect sign handling after neg operations on large values (2 candidates), and (3) incorrect modular reduction when operands exceed machine word size (1 candidate). Cascade failures included: (1) incorrect branch selection due to cached path predictions (3 candidates), (2) speculative evaluation of erased branches within conditionals (2 candidates), and (3) incorrect if_zero semantics when the tested value is the result of a previous conditional (1 candidate).</p>
+    </section>
+
+    <section>
+        <h1>5. Conclusion</h1>
+        <p>The introduction of overflow corridors and nested conditional cascades significantly strengthens FableBreaker's adversarial coverage. These families target optimization strategies that are both common and difficult to detect with existing test structures. Their inclusion in the standard generation pipeline increases the probability that certification correctly identifies semantically unfaithful optimizations, reinforcing the fundamental FableBreaker principle: no speedup claim is valid without proof of correctness across the full adversarial distribution.</p>
+    </section>
+
+    <section class="references">
+        <h1>References</h1>
+        <ol>
+            <li>Medina, F. (2026). Hidden-Seed Adversarial Generation for Evaluator Stress Testing. <em>Journal of Adversarial Evaluation</em>, 1.</li>
+            <li>Medina, F. (2026). A Taxonomy of Evaluator Evasion Strategies in Code Optimization Benchmarks. <em>Journal of Adversarial Evaluation</em>, 1.</li>
+            <li>Medina, F. (2026). Game-Resistant Benchmark Design: Architectural Principles for Ungameable Evaluation. <em>Journal of Benchmark Architecture</em>, 1.</li>
+        </ol>
+    </section>
+</article>
+</body>
+</html>

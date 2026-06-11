@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Governance-Aware Certification: Embedding Trust Hierarchies in Benchmark Evidence Chains — FableBreaker Journal</title>
+    <link rel="stylesheet" href="../assets/css/paper.css">
+</head>
+<body class="has-nav">
+<nav class="nav-bar">
+    <a href="../index.html" class="nav-brand">FableBreaker Journal</a>
+    <a href="index.html">Certification Systems</a>
+    <a href="../index.html#papers">All Papers</a>
+</nav>
+<article class="paper">
+    <header class="paper-header">
+        <div class="paper-journal">Journal of Certification Systems · Volume 1 · 2026</div>
+        <h1 class="paper-title">Governance-Aware Certification: Embedding Trust Hierarchies in Benchmark Evidence Chains</h1>
+        <div class="paper-authors">Freddy Medina</div>
+        <div class="paper-affiliation">ItsNotAI LABS Research Division</div>
+        <div class="paper-date">June 2026</div>
+    </header>
+    <div class="abstract">
+        <h2>Abstract</h2>
+        <p>Benchmark certification systems produce evidence that a candidate evaluator meets correctness and performance thresholds. However, evidence alone is insufficient for trust: the consumer of a certification result must also know who produced the evidence, under what authority, and through what governance process the certification criteria were established. This paper presents a governance-aware certification architecture for FableBreaker that embeds trust hierarchies directly into evidence chains. We define a role-based authority model where seed generation, dataset production, scoring execution, and result publication are performed by distinct roles with non-overlapping privileges. Each evidence pack includes a governance attestation specifying the operator role, the governance version under which certification was conducted, and cryptographic bindings to the authority chain. We formalize the properties that a governance-aware evidence chain must satisfy—non-repudiation, role separation, temporal ordering, and governance version pinning—and demonstrate that these properties prevent a class of certification attacks including self-certification, retroactive rule changes, and authority escalation. The architecture is implemented within the FableBreaker service layer and validated against a threat model of 7 certification integrity attacks.</p>
+    </div>
+    <div class="keywords"><strong>Keywords:</strong> governance, certification, trust hierarchy, evidence chains, role separation, authority model, benchmark integrity, non-repudiation</div>
+
+    <section>
+        <h1>1. Introduction</h1>
+        <p>When a benchmark system certifies that a candidate achieves a particular speedup with verified correctness, the resulting certificate carries implicit trust assumptions. The consumer trusts that the benchmark operator did not fabricate results, that the certification criteria were established before the candidate was submitted, and that the operator did not modify the protocol to favor a particular submission. These trust assumptions are rarely formalized in benchmark systems, creating opportunities for subtle integrity failures that undermine the value of certification.</p>
+        <p>FableBreaker's existing certification protocol addresses data integrity through SHA-256 hash verification and hidden-seed secrecy. However, it does not formally specify who may conduct certification, what authority they hold, or how governance decisions (such as adding new adversarial families or changing scoring thresholds) interact with ongoing certification campaigns. This paper addresses these gaps by introducing a governance-aware certification architecture.</p>
+        <p>The core contribution is a formal model where certification evidence is bound not only to the data it references but also to the governance context under which it was produced. This enables consumers to verify that a certification result was produced by an authorized operator, under rules that were established before the submission, and without subsequent modification. The model supports governance evolution—rules can change over time—while ensuring that no certification is retroactively invalidated or validated by governance changes.</p>
+    </section>
+
+    <section>
+        <h1>2. Threat Model</h1>
+        <p>We consider seven certification integrity attacks that governance-aware evidence chains must prevent:</p>
+        <ol>
+            <li><strong>Self-certification:</strong> A candidate author certifies their own submission without independent oversight</li>
+            <li><strong>Retroactive rule change:</strong> Governance rules are modified after submission to change the certification outcome</li>
+            <li><strong>Authority escalation:</strong> A contributor assumes maintainer privileges to approve their own certification</li>
+            <li><strong>Seed leakage:</strong> An operator with seed access shares hidden seeds with a candidate author before certification</li>
+            <li><strong>Evidence substitution:</strong> A valid evidence pack is replaced with a fabricated one after publication</li>
+            <li><strong>Temporal reordering:</strong> Certification evidence is backdated to appear as if it was produced under earlier (more favorable) governance rules</li>
+            <li><strong>Governance fork:</strong> Competing governance versions are used to produce contradictory certifications for the same candidate</li>
+        </ol>
+    </section>
+
+    <section>
+        <h1>3. Role-Based Authority Model</h1>
+        <h2>3.1 Role Definitions</h2>
+        <p>The governance model defines four distinct roles with non-overlapping certification privileges:</p>
+        <ul>
+            <li><strong>Seed Authority:</strong> Generates and commits hidden seeds. Cannot execute scoring or publish results.</li>
+            <li><strong>Scoring Operator:</strong> Executes the benchmark scorer against datasets. Cannot generate seeds or modify governance rules.</li>
+            <li><strong>Certification Publisher:</strong> Reviews scoring output and publishes the final evidence pack. Cannot generate seeds or execute scoring.</li>
+            <li><strong>Governance Author:</strong> Modifies certification rules, scoring thresholds, and family definitions. Cannot participate in any operational certification role for the same campaign.</li>
+        </ul>
+        <h2>3.2 Separation Properties</h2>
+        <p>The critical separation property is: no single entity may hold more than one role within a single certification campaign. This prevents the most direct attack vectors (self-certification, authority escalation) and creates an audit trail where each step of the certification process is attributable to a distinct authority.</p>
+        <p>In small teams, role separation may be achieved through temporal separation (the same person acts as seed authority for campaign N and scoring operator for campaign N+1) provided that campaign boundaries are cryptographically enforced through seed commitment ordering.</p>
+    </section>
+
+    <section>
+        <h1>4. Governance-Bound Evidence Packs</h1>
+        <h2>4.1 Extended Evidence Schema</h2>
+        <p>A governance-aware evidence pack extends the standard FableBreaker evidence pack with the following fields:</p>
+        <ul>
+            <li><code>governance_version</code>: The SHA-256 hash of the governance document under which certification was conducted</li>
+            <li><code>operator_role</code>: The role claimed by the operator (must be "scoring_operator")</li>
+            <li><code>operator_identity</code>: Cryptographic identity of the scoring operator</li>
+            <li><code>seed_authority_commitment</code>: Hash of the seed commitment published by the seed authority</li>
+            <li><code>publisher_identity</code>: Identity of the certification publisher (must differ from operator)</li>
+            <li><code>campaign_id</code>: Unique identifier binding all evidence to a single certification campaign</li>
+            <li><code>governance_pinned_at</code>: Timestamp at which the governance version was pinned for this campaign</li>
+        </ul>
+        <h2>4.2 Verification Protocol</h2>
+        <p>A consumer verifies a governance-aware evidence pack by checking: (1) the governance version hash matches a known governance document, (2) the operator identity is authorized for the scoring_operator role under that governance version, (3) the publisher identity differs from the operator identity and is authorized for the publisher role, (4) the seed authority commitment was published before the scoring timestamp, and (5) the governance_pinned_at timestamp precedes the candidate submission timestamp.</p>
+    </section>
+
+    <section>
+        <h1>5. Implementation</h1>
+        <p>The governance-aware certification architecture is implemented within the FableBreaker service layer. The <code>/api/v1/certify</code> endpoint accepts a certification request and validates role separation before executing the scoring pipeline. Evidence packs are generated with governance bindings automatically populated from the service configuration. The governance document itself is stored in version control (GOVERNANCE.md) and its SHA-256 hash is computed at service startup, ensuring that any modification to governance rules produces a new governance version that must be explicitly adopted before new certifications can proceed.</p>
+    </section>
+
+    <section>
+        <h1>6. Conclusion</h1>
+        <p>Governance-aware certification transforms benchmark evidence from a statement about data ("this candidate produced correct outputs") into a statement about process ("this candidate was certified by an authorized operator under established rules through a separation-of-duties protocol"). This stronger form of evidence is necessary for benchmarks that aim to provide trustworthy performance claims in adversarial settings. The FableBreaker implementation demonstrates that governance bindings can be embedded in evidence chains with minimal operational overhead while providing formal protection against the seven identified certification integrity attacks.</p>
+    </section>
+
+    <section class="references">
+        <h1>References</h1>
+        <ol>
+            <li>Medina, F. (2026). Cryptographic Evidence Chains for Performance Claim Certification. <em>Journal of Certification Systems</em>, 1.</li>
+            <li>Medina, F. (2026). The Hidden-Seed Rotation Protocol: Temporal Integrity in Benchmark Certification. <em>Journal of Certification Systems</em>, 1.</li>
+            <li>Medina, F. (2026). Scoring Protocol Integrity Under Adversarial Candidate Submission. <em>Journal of Benchmark Architecture</em>, 1.</li>
+        </ol>
+    </section>
+</article>
+</body>
+</html>

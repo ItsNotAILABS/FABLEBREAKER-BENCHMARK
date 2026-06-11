@@ -41,11 +41,12 @@ Any candidate that produces a single incorrect output on any hidden test case re
 
 | Component | Purpose | Location |
 |-----------|---------|----------|
-| **AST Language** | Defines the expression grammar under evaluation | `fablebreaker/fablebreaker/astlang.py` |
-| **Generator** | Produces deterministic datasets from seed values | `fablebreaker/fablebreaker/generator.py` |
-| **Scorer** | Measures correctness and performance against hash-locked outputs | `fablebreaker/fablebreaker/scorer.py` |
+| **AST Language** | Defines the expression grammar under evaluation (18+ ops including `if_zero`, `neg`, `abs`, `sub`, `band`, `bor`, `fold_list`, `seq`) | `fablebreaker/fablebreaker/astlang.py` |
+| **Generator** | Produces deterministic datasets from seed values across 8 adversarial families | `fablebreaker/fablebreaker/generator.py` |
+| **Scorer** | Measures correctness and performance with per-family breakdown and 95% confidence intervals | `fablebreaker/fablebreaker/scorer.py` |
 | **Audit Runner** | End-to-end certification pipeline | `fablebreaker/tools/run_full_audit.py` |
-| **Service** | HTTP interface for programmatic access | `fablebreaker_service.py` |
+| **Service** | Versioned HTTP API (`/api/v1/`) with CORS, rate limiting, and structured logging | `fablebreaker_service.py` |
+| **Governance** | Role-based authority model for certification integrity | `GOVERNANCE.md` |
 
 ---
 
@@ -70,22 +71,25 @@ python tools/run_full_audit.py --candidate candidates.baseline_candidate
 ### Launch the Certification Service
 
 ```bash
-python fablebreaker_service.py --host 127.0.0.1 --port 8787
+python fablebreaker_service.py --host 127.0.0.1 --port 8787 --log-level INFO
 ```
 
-### Verify the Service
+### Verify the Service (Versioned API)
 
 ```bash
-curl http://127.0.0.1:8787/health
-curl http://127.0.0.1:8787/manifest
+curl http://127.0.0.1:8787/api/v1/health
+curl http://127.0.0.1:8787/api/v1/manifest
+curl http://127.0.0.1:8787/api/v1/status
+curl http://127.0.0.1:8787/api/v1/candidates
+curl http://127.0.0.1:8787/api/v1/families
 ```
 
 ### Submit a Candidate for Scoring
 
 ```bash
-curl -X POST http://127.0.0.1:8787/score \
+curl -X POST http://127.0.0.1:8787/api/v1/score \
   -H "Content-Type: application/json" \
-  -d '{"candidate": "candidates.baseline_candidate", "seed": 823, "count": 100}'
+  -d '{"candidate": "candidates.baseline_candidate", "dataset": "dataset/public.jsonl"}'
 ```
 
 ---
@@ -110,17 +114,17 @@ def evaluate(expr: dict) -> object:
 
 ## Research Journal
 
-FableBreaker publishes peer-reviewed research across five principal journals:
+FableBreaker publishes peer-reviewed research across five principal journals (14 papers published):
 
-| Journal | Focus Area |
-|---------|------------|
-| **[Journal of Adversarial Evaluation](journal/adversarial-evaluation/index.html)** | Adversarial test generation and evaluator stress testing |
-| **[Journal of Benchmark Architecture](journal/benchmark-architecture/index.html)** | Game-resistant evaluation system design |
-| **[Journal of Certification Systems](journal/certification-systems/index.html)** | Cryptographic evidence and trust protocols |
-| **[Journal of Semantic Preservation](journal/semantic-preservation/index.html)** | Formal verification of evaluator correctness |
-| **[Journal of Reproducibility Methods](journal/reproducibility-methods/index.html)** | Deterministic generation and measurement frameworks |
+| Journal | Focus Area | Papers |
+|---------|------------|--------|
+| **[Journal of Adversarial Evaluation](journal/adversarial-evaluation/index.html)** | Adversarial test generation and evaluator stress testing | 3 |
+| **[Journal of Benchmark Architecture](journal/benchmark-architecture/index.html)** | Game-resistant evaluation system design | 3 |
+| **[Journal of Certification Systems](journal/certification-systems/index.html)** | Cryptographic evidence, trust protocols, and governance | 3 |
+| **[Journal of Semantic Preservation](journal/semantic-preservation/index.html)** | Formal verification of evaluator correctness | 2 |
+| **[Journal of Reproducibility Methods](journal/reproducibility-methods/index.html)** | Deterministic generation, measurement, and API automation | 3 |
 
-**[Browse the Full Journal →](journal/index.html)**
+**[Browse the Full Journal →](journal/index.html)** · **[Editorial Board →](journal/editorial-board.html)**
 
 ---
 
@@ -140,12 +144,14 @@ FABLEBREAKER-BENCHMARK/
 │   ├── services/                    # HTTP service layer
 │   ├── certification/               # Evidence and manifests
 │   └── manifests/                   # Configuration manifests
-├── journal/                         # Research publications (HTML/PDF-style)
-│   ├── adversarial-evaluation/      # Journal papers
-│   ├── benchmark-architecture/      # Journal papers
-│   ├── certification-systems/       # Journal papers
-│   ├── semantic-preservation/       # Journal papers
-│   └── reproducibility-methods/     # Journal papers
+├── journal/                         # Research publications (14 papers)
+│   ├── adversarial-evaluation/      # 3 papers
+│   ├── benchmark-architecture/      # 3 papers
+│   ├── certification-systems/       # 3 papers
+│   ├── semantic-preservation/       # 2 papers
+│   ├── reproducibility-methods/     # 3 papers
+│   └── editorial-board.html         # Editorial board & review standards
+├── GOVERNANCE.md                    # Project governance model
 ├── benchmark-manifest.json          # Suite registry
 ├── evidence-pack-template.json      # Evidence pack schema
 ├── PACKET_POLICY.md                 # Production packet requirements
