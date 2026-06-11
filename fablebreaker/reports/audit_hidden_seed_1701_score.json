@@ -1,0 +1,16 @@
+{
+  "baseline_median_ms": 0.7537830001638213,
+  "baseline_p95_ms": 1.8441989996063057,
+  "baseline_total_seconds": 0.20641685699865775,
+  "candidate": "candidates.baseline_candidate",
+  "candidate_median_ms": 0.6834874998276064,
+  "candidate_p95_ms": 1.653887999964354,
+  "candidate_total_seconds": 0.18344476299716916,
+  "cases": 240,
+  "certified": true,
+  "correct": 240,
+  "dataset": "/workspace/benchmark-certification/suites/fablebreaker/dataset/hidden_seed_1701.jsonl",
+  "failed": 0,
+  "failures": [],
+  "speedup_vs_reference": 1.125226218651132
+}

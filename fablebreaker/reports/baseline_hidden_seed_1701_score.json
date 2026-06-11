@@ -1,0 +1,16 @@
+{
+  "baseline_median_ms": 0.8589724999978898,
+  "baseline_p95_ms": 1.9256179999729284,
+  "baseline_total_seconds": 0.22558738500009667,
+  "candidate": "candidates.baseline_candidate",
+  "candidate_median_ms": 0.7904965000307129,
+  "candidate_p95_ms": 1.8983430000503176,
+  "candidate_total_seconds": 0.20711766200071224,
+  "cases": 240,
+  "certified": true,
+  "correct": 240,
+  "dataset": "dataset/hidden_seed_1701.jsonl",
+  "failed": 0,
+  "failures": [],
+  "speedup_vs_reference": 1.089175026508946
+}
