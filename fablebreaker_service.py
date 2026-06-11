@@ -57,7 +57,7 @@ class FableBreakerHandler(BaseHTTPRequestHandler):
             "error": "not_found",
             "endpoints": {
                 "GET": ["/health", "/manifest", "/score", "/leaderboard", "/seed-commitments", "/regression"],
-                "POST": ["/generate", "/claim-audit", "/certify"],
+                "POST": ["/generate", "/claim-audit", "/certify", "/batch-audit"],
             },
         }, status=404)
 
@@ -74,6 +74,9 @@ class FableBreakerHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/certify":
             self._certify(body)
+            return
+        if parsed.path == "/batch-audit":
+            self._batch_audit(body)
             return
         self.reply({"error": "not_found"}, status=404)
 
@@ -187,6 +190,71 @@ class FableBreakerHandler(BaseHTTPRequestHandler):
         else:
             self.reply({"ok": False, "error": output}, status=500)
 
+    def _batch_audit(self, body: bytes) -> None:
+        """Test 30-100+ agents in a single API call.
+
+        POST /batch-audit
+        {
+            "candidates": ["candidates.agent_1", "candidates.agent_2", ...],
+            "discover": "candidates",           // optional: auto-discover from directory
+            "scan_dirs": ["/path/to/repo"],      // optional: scan external repos
+            "public_seed": 823,
+            "hidden_seeds": [1701, 9999],
+            "count": 240,
+            "workers": 4
+        }
+        """
+        payload = json.loads(body or b"{}")
+        candidates_list = payload.get("candidates", [])
+        discover_dir = payload.get("discover")
+        scan_dirs = payload.get("scan_dirs", [])
+        public_seed = int(payload.get("public_seed", 823))
+        hidden_seeds = [int(s) for s in payload.get("hidden_seeds", [1701])]
+        count = int(payload.get("count", 240))
+        workers = int(payload.get("workers", 4))
+
+        # Validate candidates don't contain path traversal
+        for cand in candidates_list:
+            if "/" in cand or "\\" in cand:
+                self.reply({"error": f"candidate must be a Python module path: {cand}"}, status=400)
+                return
+
+        # Discover from package directory
+        if discover_dir:
+            if "/" in discover_dir or "\\" in discover_dir:
+                self.reply({"error": "discover must be a package name, not a path"}, status=400)
+                return
+            from tools.repo_scanner import discover_candidates
+            discovered = discover_candidates(SUITE / discover_dir)
+            candidates_list.extend(discovered)
+
+        # Scan external dirs
+        if scan_dirs:
+            from tools.repo_scanner import scan_external_dirs
+            scanned = scan_external_dirs(scan_dirs)
+            candidates_list.extend(scanned)
+
+        if not candidates_list:
+            self.reply({"error": "No candidates specified or discovered"}, status=400)
+            return
+
+        # Deduplicate
+        candidates_list = list(dict.fromkeys(candidates_list))
+
+        # Run batch audit
+        from tools.batch_audit import run_batch_audit
+        try:
+            report = run_batch_audit(
+                candidates=candidates_list,
+                public_seed=public_seed,
+                hidden_seeds=hidden_seeds,
+                count=count,
+                workers=workers,
+            )
+            self.reply(report)
+        except Exception as exc:  # noqa: BLE001 - service must not crash
+            self.reply({"ok": False, "error": str(exc)}, status=500)
+
     def _score(self, dataset: str, candidate: str) -> None:
         if not dataset.startswith("dataset/"):
             self.reply({"error": "dataset must stay under dataset/"}, status=400)
@@ -284,6 +352,7 @@ def main() -> None:
     print("  POST /generate          - Generate a dataset")
     print("  POST /claim-audit       - Submit a claim for full audit")
     print("  POST /certify           - Certify a candidate (hidden seeds)")
+    print("  POST /batch-audit       - Test 30-100+ agents in parallel")
     server.serve_forever()
 
 

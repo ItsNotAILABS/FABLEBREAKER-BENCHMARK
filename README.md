@@ -90,6 +90,70 @@ curl -X POST http://127.0.0.1:8787/score \
 
 ---
 
+## Multi-Agent Batch Testing (30-100+ Agents)
+
+FableBreaker supports testing **30 to 100+ agents in parallel** with a single command. This is designed for when you have many agents producing code and need to verify what actually works vs. what silently breaks.
+
+### Command Line
+
+```bash
+cd fablebreaker
+
+# Auto-discover all candidates in candidates/ directory:
+python -m tools.batch_audit --discover candidates --count 240 --workers 4
+
+# Test specific candidates:
+python -m tools.batch_audit --candidates candidates.agent_1 candidates.agent_2 candidates.agent_3
+
+# Scan external repos for evaluate() functions:
+python -m tools.batch_audit --scan-dirs /path/to/repo1 /path/to/repo2 /path/to/repo3
+
+# Full swarm test: 100 agents, 1000 cases, multiple hidden seeds:
+python -m tools.batch_audit --discover candidates \
+  --count 1000 \
+  --hidden-seeds 1701 9999 31337 42 \
+  --workers 8
+
+# Combine all sources:
+python -m tools.batch_audit \
+  --discover candidates \
+  --scan-dirs /path/to/agent-repo-1 /path/to/agent-repo-2 \
+  --candidates custom.module_1 custom.module_2 \
+  --count 500 --workers 8
+```
+
+### API Endpoint
+
+```bash
+curl -X POST http://127.0.0.1:8787/batch-audit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "candidates": ["candidates.baseline_candidate", "candidates.example_multi_agent"],
+    "discover": "candidates",
+    "hidden_seeds": [1701, 9999, 31337],
+    "count": 240,
+    "workers": 4
+  }'
+```
+
+### What You Get
+
+The batch audit produces a consolidated report showing:
+- **Ranked leaderboard** — all agents sorted by certified speedup
+- **Failure analysis** — which adversarial families break which agents
+- **Per-agent breakdown** — exact case counts, timing, error messages
+- **Certification rate** — what % of your agents actually produce correct output
+
+### How to Add Your Agents
+
+1. **Local candidates**: Put `.py` files in `fablebreaker/candidates/` with a `def evaluate(expr: dict) -> object` function
+2. **External repos**: Point `--scan-dirs` at any directory — FableBreaker auto-discovers files with `evaluate()`
+3. **Custom modules**: Use `--candidates` with any importable Python module path
+
+See `candidates/example_multi_agent.py` for a template.
+
+---
+
 ## Candidate Contract
 
 Any candidate module must expose a single function:
