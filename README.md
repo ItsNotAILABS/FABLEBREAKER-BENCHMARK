@@ -124,7 +124,43 @@ FableBreaker publishes peer-reviewed research across five principal journals (14
 | **[Journal of Semantic Preservation](journal/semantic-preservation/index.html)** | Formal verification of evaluator correctness | 2 |
 | **[Journal of Reproducibility Methods](journal/reproducibility-methods/index.html)** | Deterministic generation, measurement, and API automation | 3 |
 
+**Foundation Paper:** [https://doi.org/10.5281/zenodo.20589250](https://doi.org/10.5281/zenodo.20589250)
+
 **[Browse the Full Journal →](journal/index.html)** · **[Editorial Board →](journal/editorial-board.html)**
+
+---
+
+## Protocol SDK
+
+All journal protocols are available as importable Python modules in the `fablebreaker.protocols` package:
+
+```python
+from fablebreaker.protocols import (
+    OverflowCorridorProtocol,      # Adversarial overflow corridor generation
+    ConditionalCascadeProtocol,    # Nested conditional cascade generation
+    GovernanceCertificationProtocol,  # Governance-aware evidence chains
+    PerFamilyScoringProtocol,      # Per-family scoring with confidence intervals
+    APIReproducibilityProtocol,    # HTTP API client for benchmark automation
+    ProtocolRegistry,              # Registry of all 14 papers and their SDK bindings
+    FOUNDATION_DOI,                # "10.5281/zenodo.20589250"
+)
+
+# Generate adversarial overflow corridor cases
+corridor = OverflowCorridorProtocol()
+result = corridor.generate(seed=42, size=30)
+
+# Compute per-family scoring breakdown
+scoring = PerFamilyScoringProtocol()
+report = scoring.compute(cases, candidate_times, baseline_times, failures)
+
+# Create governance-aware certification evidence
+gov_protocol = GovernanceCertificationProtocol()
+pack = gov_protocol.create_evidence_pack(...)
+
+# Query the full paper registry
+registry = ProtocolRegistry()
+print(registry.summary())  # 14 papers across 5 journals
+```
 
 ---
 
@@ -134,6 +170,7 @@ FableBreaker publishes peer-reviewed research across five principal journals (14
 FABLEBREAKER-BENCHMARK/
 ├── fablebreaker/                    # Core benchmark suite
 │   ├── fablebreaker/                # Evaluator, generator, scorer
+│   │   └── protocols/              # Protocol SDK (all 14 paper implementations)
 │   ├── candidates/                  # Candidate implementations
 │   ├── dataset/                     # Generated datasets (JSONL)
 │   ├── reports/                     # Score outputs
