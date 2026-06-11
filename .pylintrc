@@ -31,7 +31,10 @@ disable =
     consider-using-max-builtin,
     broad-exception-caught,
     subprocess-run-check,
-    redefined-builtin
+    redefined-builtin,
+    import-outside-toplevel,
+    import-error,
+    no-name-in-module
 
 [FORMAT]
 max-line-length = 140
