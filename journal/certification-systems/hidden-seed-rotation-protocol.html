@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Hidden-Seed Rotation Protocol: Temporal Integrity in Benchmark Certification — FableBreaker Journal</title>
+    <link rel="stylesheet" href="../assets/css/paper.css">
+</head>
+<body class="has-nav">
+<nav class="nav-bar">
+    <a href="../index.html" class="nav-brand">FableBreaker Journal</a>
+    <a href="index.html">Certification Systems</a>
+    <a href="../index.html#papers">All Papers</a>
+</nav>
+<article class="paper">
+    <header class="paper-header">
+        <div class="paper-journal">Journal of Certification Systems · Volume 1 · 2026</div>
+        <h1 class="paper-title">The Hidden-Seed Rotation Protocol: Temporal Integrity in Benchmark Certification</h1>
+        <div class="paper-authors">Freddy Medina</div>
+        <div class="paper-affiliation">ItsNotAI LABS Research Division</div>
+        <div class="paper-date">June 2026</div>
+    </header>
+
+    <div class="abstract">
+        <h2>Abstract</h2>
+        <p>Hidden benchmark seeds are a powerful defense against memorization, evaluator overfitting, and strategic submission behavior, but static hidden datasets inevitably decay. As more evaluations are conducted, distributional hints leak through model behavior, operator documentation, and social coordination; eventually a once-secret benchmark ceases to provide strong evidence about general capability. This paper introduces the Hidden-Seed Rotation Protocol (HSRP), a certification mechanism that restores temporal integrity by advancing benchmark seed material on a schedule while preserving auditability and continuity of certification. The protocol publishes cryptographic pre-commitments to future seeds before reveal, defines validity windows for scores, specifies backward-compatibility rules during migration, and records rotation state transitions in a timestamped registry. We formalize the protocol as a state machine, prove security properties against pre-computation, time-travel, and social-engineering attacks, and show how the mechanism composes with evidence packs and benchmark transparency logs. The analysis demonstrates that rotating hidden seeds is not merely an operational hygiene practice but a fundamental requirement for long-lived benchmark certification. By forcing commitment to future seed material before it becomes active, the protocol prevents opportunistic seed selection while allowing verifiers to check that every certified score was generated within the correct temporal window under the committed secret regime. Practical deployment guidance is provided for staged rollouts, dispute handling, escrow management, and cross-version comparability.</p>
+    </div>
+
+    <div class="keywords"><strong>Keywords:</strong> hidden seeds, benchmark rotation, pre-commitment, temporal integrity, certification windows, state machine, pre-computation resistance, commit-reveal, benchmark governance, security proofs</div>
+
+    <h1>1. Introduction</h1>
+    <p>Benchmark secrecy is not a binary property that, once established, remains intact forever. Hidden test material degrades. Every evaluation leaks information, even if only indirectly. Model providers infer structure from failure distributions, benchmark operators accumulate operational knowledge that can be socially transmitted, and repeated certification against the same hidden seed family invites gradual adaptation. Static hidden datasets therefore create an illusion of security: the benchmark appears secret while its effective entropy is steadily consumed over time.</p>
+    <p>This temporal dimension is often missing from benchmark certification frameworks. A score is marked certified if it used the correct dataset version, but the version itself may have remained static long past the point at which its secrecy assumptions were credible. Temporal integrity demands a stronger condition: a claim should only be certified if it was generated within a window during which the hidden seed regime remained valid, uncontaminated by later reveals, and publicly pre-committed before activation.</p>
+    <p>The Hidden-Seed Rotation Protocol (HSRP) addresses this problem by treating hidden seed management as a governed cryptographic process rather than an ad hoc refresh policy. Seed batches advance according to a schedule. Future batches are committed in advance by publishing their hashes, ensuring that operators cannot opportunistically choose seeds after observing model behavior. Activation, overlap, deprecation, reveal, and archival are recorded in a timestamped registry. Certified scores explicitly cite the active seed epoch and inherit a validity interval from that epoch's policy.</p>
+    <p>The main claim of this paper is that temporal integrity is a first-class security property in benchmark certification. A claim can be internally consistent yet still obsolete if it was produced against a hidden dataset whose secrecy margin had already collapsed. HSRP therefore augments static evidence-pack certification with time-aware governance, making benchmark trust contingent not only on what was run, but on when it was run and under which seed lifecycle state.</p>
+
+    <h1>2. Why Static Hidden Datasets Degrade Over Time</h1>
+    <h2>2.1 Information leakage accumulation</h2>
+    <p>Every evaluation reveals some information about the hidden benchmark distribution. Even when exact items are not exposed, aggregate score changes under model updates, qualitative failure reports, challenge write-ups, and operator bug fixes expose structure. Adversaries need not reconstruct the full dataset to benefit; partial knowledge is enough to target model adaptation. Over time, a static hidden corpus ceases to function as an unbiased proxy for unseen data and becomes a semi-known target.</p>
+    <p>This process resembles key exhaustion in cryptography and test-item compromise in psychometrics. A hidden benchmark can tolerate some information leakage, but the risk is cumulative. Once sufficiently many evaluations are performed, the effective hiddenness of the corpus declines below a policy threshold. Certification must therefore account for exposure history, not just nominal secrecy status.</p>
+
+    <h2>2.2 Operator and ecosystem drift</h2>
+    <p>Static datasets also degrade because the surrounding ecosystem changes. New models alter the attack surface, new prompting techniques reveal latent regularities, and personnel turnover increases the number of individuals with partial benchmark knowledge. A seed regime that was robust when introduced may be weak one year later because the environment around it has changed. The benchmark's secrecy guarantee is thus temporally contextual rather than absolute.</p>
+
+    <h2>2.3 Consequences for certification</h2>
+    <p>If certification ignores temporal degradation, old scores may remain visually comparable to new ones even though they were produced under materially different secrecy conditions. This encourages strategic timing: submitters may rush evaluations shortly before an anticipated reveal, or operators may delay rotation to preserve leaderboard continuity. HSRP is designed to remove this ambiguity by attaching explicit validity periods to seed epochs and by distinguishing cross-epoch comparability from within-epoch certification.</p>
+
+    <h1>3. Protocol Overview</h1>
+    <p>HSRP organizes hidden seed material into epochs. Each epoch has a unique identifier, a committed seed hash, an activation timestamp, an expiration timestamp, a reveal policy, and a successor pointer. Before epoch <code>e+1</code> becomes active, the operator publishes a pre-commitment to its seed material while <code>e</code> is still active. This prevents after-the-fact tailoring of the future seed to exploit observed model behavior.</p>
+    <div class="definition">A <strong>seed epoch</strong> is a tuple <code>E = (id, hseed, t_precommit, t_activate, t_expire, state, policy)</code> where <code>hseed = SHA256(domain || seed_material || context)</code>. The state belongs to <code>{Planned, Committed, Active, Overlap, Deprecated, Revealed, Archived}</code>.</div>
+    <p>The protocol operates on four principles. First, activation must be preceded by public commitment. Second, certification during an epoch is valid only inside that epoch's accepted window. Third, a bounded overlap interval may exist to preserve backward compatibility during handover. Fourth, reveal of retired seed material is optional but, if performed, must be cryptographically linked to the prior commitment and timestamp history.</p>
+
+    <h1>4. Formal Protocol Specification</h1>
+    <h2>4.1 State machine</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>State</th>
+                <th>Description</th>
+                <th>Permitted transitions</th>
+                <th>Certification status</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Planned</td>
+                <td>Seed batch prepared but not committed</td>
+                <td>Committed</td>
+                <td>Invalid</td>
+            </tr>
+            <tr>
+                <td>Committed</td>
+                <td>Hash of future seed published</td>
+                <td>Active, Cancelled</td>
+                <td>Invalid</td>
+            </tr>
+            <tr>
+                <td>Active</td>
+                <td>Primary seed epoch for new evaluations</td>
+                <td>Overlap, Deprecated</td>
+                <td>Valid</td>
+            </tr>
+            <tr>
+                <td>Overlap</td>
+                <td>Old and new epochs both accepted under policy</td>
+                <td>Deprecated</td>
+                <td>Conditionally valid</td>
+            </tr>
+            <tr>
+                <td>Deprecated</td>
+                <td>No new certifications accepted</td>
+                <td>Revealed, Archived</td>
+                <td>Expired</td>
+            </tr>
+            <tr>
+                <td>Revealed</td>
+                <td>Seed plaintext disclosed for audit</td>
+                <td>Archived</td>
+                <td>Historical only</td>
+            </tr>
+            <tr>
+                <td>Archived</td>
+                <td>Frozen historical record</td>
+                <td>None</td>
+                <td>Historical only</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>The state machine is encoded in the certification registry, which rejects illegal transitions. In particular, an epoch cannot move directly from Planned to Active; it must first pass through Committed, ensuring public evidence that the operator was bound to a future seed before activation. Likewise, Deprecated epochs cannot reactivate, preventing “time-travel” attacks in which an old seed is resurrected after its compromise becomes known.</p>
+
+    <div class="algorithm">
+        <div class="algorithm-title">Algorithm 2. Hidden-Seed Rotation Protocol</div>
+        <ol>
+            <li>Generate candidate seed batch <code>S_{e+1}</code> under controlled custody and compute <code>h_{e+1} = SHA256(domain || S_{e+1} || context)</code>.</li>
+            <li>Publish a registry record containing <code>epoch_id</code>, <code>h_{e+1}</code>, policy metadata, and intended activation window.</li>
+            <li>Timestamp the pre-commitment record and obtain inclusion in the transparency log.</li>
+            <li>At <code>t_activate</code>, transition epoch <code>e+1</code> to Active only if the pre-commitment record exists and predates activation by at least the minimum notice interval.</li>
+            <li>During the overlap window, allow certifications under either epoch according to migration policy while requiring the evidence pack to state the epoch identifier explicitly.</li>
+            <li>At <code>t_expire</code>, mark epoch <code>e</code> Deprecated and reject new certifications referencing it.</li>
+            <li>Optionally reveal retired seed material and verify that its hash matches the historical commitment.</li>
+            <li>Archive the epoch with all transition timestamps and custody attestations.</li>
+        </ol>
+    </div>
+
+    <h2>4.2 Pre-commitment schemes</h2>
+    <p>The security purpose of pre-commitment is to eliminate adaptive future-seed selection. Suppose an operator could wait until current evaluations complete, observe weaknesses in frontier systems, and only then choose the next hidden seed batch. That operator would possess a powerful and opaque lever over future leaderboard outcomes. By publishing <code>h_{e+1}</code> before the reveal or activation of <code>S_{e+1}</code>, HSRP binds the operator to a future secret while preserving secrecy until activation or later disclosure.</p>
+    <p>The commitment need not reveal seed length or generator internals, but it must bind enough contextual metadata to prevent substitution across benchmarks or policy regimes. In practice, the committed hash input includes benchmark identifier, epoch number, generation policy version, and an optional escrow nonce. This prevents the same raw seed bytes from being opportunistically reused under a different claimed context.</p>
+
+    <h2>4.3 Temporal windows and validity periods</h2>
+    <p>Every certified score receives a validity interval derived from the epoch policy. If a score is generated during an Active period, it is fully valid for claims within the benchmark's comparison window. Scores from the overlap period remain valid but must be marked with the epoch identifier to prevent silent comparison across different hidden regimes. After deprecation, no new certification may cite that epoch, although historical records remain auditable.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Window</th>
+                <th>Purpose</th>
+                <th>Recommended duration</th>
+                <th>Risk controlled</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Pre-commit notice</td>
+                <td>Public binding before activation</td>
+                <td>7–30 days</td>
+                <td>Adaptive seed selection</td>
+            </tr>
+            <tr>
+                <td>Active window</td>
+                <td>Primary certification interval</td>
+                <td>30–180 days</td>
+                <td>Stale secrecy assumptions</td>
+            </tr>
+            <tr>
+                <td>Overlap window</td>
+                <td>Backward-compatible handover</td>
+                <td>7–21 days</td>
+                <td>Operational disruption</td>
+            </tr>
+            <tr>
+                <td>Reveal window</td>
+                <td>Delayed audit disclosure</td>
+                <td>Post-deprecation</td>
+                <td>Undetected operator misconduct</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>4.4 Backward compatibility during rotation</h2>
+    <p>Rotation introduces a governance challenge: how can ongoing submissions complete without sudden invalidation? HSRP solves this using a bounded overlap state. During overlap, both the retiring epoch and the new epoch can certify results, but the certification object must declare the epoch, and cross-epoch leaderboard comparisons are either prohibited or statistically normalized under explicit policy. Crucially, overlap is finite. Endless overlap would collapse the protocol into static coexistence and reintroduce temporal ambiguity.</p>
+
+    <h1>5. Security Analysis</h1>
+    <h2>5.1 Threats: pre-computation, time-travel, and social engineering</h2>
+    <p><strong>Pre-computation attacks.</strong> A submitter may attempt to infer future hidden material and train or search against it before activation. HSRP limits this by keeping future seeds secret and only exposing their commitments. Under preimage resistance, the commitment reveals no usable seed information.</p>
+    <p><strong>Time-travel attacks.</strong> An operator or submitter may attempt to claim that a score was generated under an earlier epoch with stronger comparative standing. Timestamped registry records and evidence-pack timestamps prevent this, because the epoch state at the claimed time is publicly auditable.</p>
+    <p><strong>Social-engineering attacks.</strong> Adversaries may seek partial knowledge from personnel, such as hints about upcoming distributions or overlap deadlines. HSRP cannot eliminate human risk, but it narrows the damage by ensuring that seed activation and validity are determined by prior public commitments rather than informal operator discretion.</p>
+
+    <div class="definition">The protocol has <strong>temporal integrity</strong> if no probabilistic polynomial-time adversary can produce an accepted certification that attributes a score to an incorrect seed epoch or valid time window without either violating registry consistency, forging signatures, or breaking the hash commitment scheme.</div>
+
+    <div class="lemma">If future seed commitments are published before activation and the registry enforces monotonic state transitions, then no adversary can adaptively choose an activated epoch seed after observing post-commit evaluation outcomes without detection.</div>
+    <p><strong>Proof sketch.</strong> After commitment, the operator is bound to <code>h_{e+1}</code>. Any different activated seed <code>S'_{e+1}</code> that yields an accepted later reveal must satisfy <code>SHA256(domain || S'_{e+1} || context) = h_{e+1}</code>, implying a second preimage. If the operator instead activates without pre-commitment, the registry rejects the transition. Therefore adaptive post-observation seed selection is prevented except with negligible probability.</p>
+
+    <div class="theorem">Assume SHA-256 is preimage and second-preimage resistant, certification signatures are EUF-CMA secure, and the registry is append-only with authenticated timestamps. Then HSRP provides temporal integrity, pre-commitment binding, and non-equivocation of seed epoch state.</div>
+    <p><strong>Proof sketch.</strong> A successful violation of temporal integrity requires one of three outcomes: (i) acceptance of a certificate under a false epoch, which requires forging the signed evidence pack or corrupting registry history; (ii) activation of an uncommitted or differently committed future seed, which requires breaking hash binding or registry enforcement; or (iii) backdating or forward-dating a certification beyond the permitted window, which requires timestamp forgery or ledger equivocation. Each possibility contradicts an assumed primitive.</p>
+
+    <h2>5.2 Security proofs for rotation correctness</h2>
+    <p>Correctness means that honest executions of the protocol produce certificates that verifiers accept and that historical reveals match prior commitments. Let <code>VerifyHSRP</code> denote the deterministic verifier. For any honestly generated epoch sequence with properly timestamped commitments and valid signatures, <code>VerifyHSRP</code> accepts because each state transition is legal, each certification timestamp lies in the corresponding accepted window, and any later reveal reproduces the committed hash. The protocol therefore offers both safety (bad histories are rejected) and liveness (honest scheduled rotations remain certifiable).</p>
+
+    <h1>6. Composition with Evidence Packs and Benchmark Scoring</h1>
+    <p>HSRP is designed to compose directly with cryptographic evidence chains. The evidence pack for a benchmark run includes the active epoch identifier, the committed seed hash, registry inclusion proof, and policy version. This means that a performance claim is simultaneously bound to the dataset root, output trace, and temporal seed regime. The verifier therefore checks not only whether the run was authentic, but whether it occurred under the correct hidden-seed epoch.</p>
+    <p>This composition is essential because hidden-seed rotation without trace certification only solves half the problem. A submitter could still misstate outputs or selectively omit cases. Conversely, evidence packs without seed rotation eventually certify stale secrecy. Together, the two mechanisms produce durable benchmark certification.</p>
+
+    <h1>7. Practical Deployment Considerations</h1>
+    <h2>7.1 Scheduling and governance</h2>
+    <p>Rotation cadence should be tied to exposure rate rather than arbitrary calendar intervals alone. Benchmarks with frequent high-stakes submissions may require monthly or quarterly rotation, whereas lower-volume benchmarks can rotate less frequently. Policy should specify triggers such as number of certified runs, public leak suspicion, evaluator compromise, or significant distributional drift.</p>
+
+    <h2>7.2 Escrow and split control</h2>
+    <p>Future seed material should be stored under split control so that no single operator can unilaterally substitute or prematurely inspect it. Practical options include threshold encryption, hardware security modules, or dual-custodian offline escrow. The pre-commitment record should identify the escrow mechanism without revealing the seed itself.</p>
+
+    <h2>7.3 Rollback and emergency rotation</h2>
+    <p>If leakage is suspected, HSRP supports emergency rotation. A new future epoch can be committed immediately, activated after a shortened notice interval defined by emergency policy, and linked to the compromised epoch through an incident flag. Even in emergencies, the requirement of public commitment should not be waived entirely; instead, policy may authorize a reduced but nonzero notice period to preserve accountability.</p>
+
+    <h2>7.4 Comparability across epochs</h2>
+    <p>Scores from different epochs may not be directly comparable if the hidden distributions differ materially. HSRP therefore recommends one of three policies: segregated leaderboards by epoch, calibrated bridging sets with statistical normalization, or comparison only within an overlap-certified migration study. The important principle is that temporal integrity should not be sacrificed for superficial continuity.</p>
+
+    <h1>8. Operational Results and Policy Guidance</h1>
+    <p>In practical deployment, HSRP improves benchmark governance in three ways. First, it turns a vague maintenance promise—"we rotate hidden data periodically"—into a verifiable public commitment schedule. Second, it reduces discretionary power by preventing operators from choosing future hidden seeds after seeing current model trends. Third, it provides a clean rule for claim expiration: a score remains historically true, but its certification validity for current benchmark standing is bounded by the seed epoch policy.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Operational question</th>
+                <th>Without HSRP</th>
+                <th>With HSRP</th>
+                <th>Certification consequence</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Was the hidden set still credible?</td>
+                <td>Subjective judgment</td>
+                <td>Checked against epoch age and policy</td>
+                <td>Temporal validity becomes auditable</td>
+            </tr>
+            <tr>
+                <td>Could future seeds be hand-picked?</td>
+                <td>Possibly</td>
+                <td>Bound by prior hash commitment</td>
+                <td>Reduces operator discretion</td>
+            </tr>
+            <tr>
+                <td>Can old scores remain indefinitely current?</td>
+                <td>Often yes</td>
+                <td>No, validity window is explicit</td>
+                <td>Prevents stale-certification drift</td>
+            </tr>
+            <tr>
+                <td>How are disputes investigated?</td>
+                <td>Manual narrative review</td>
+                <td>Registry + evidence-pack verification</td>
+                <td>Deterministic adjudication</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h1>9. Discussion</h1>
+    <p>The hidden-seed rotation problem illustrates a broader principle for AI evaluation: secrecy assumptions decay on a clock. Systems that ignore this fact confuse hiddenness at creation time with hiddenness at certification time. HSRP explicitly models that gap. It neither assumes perfect secrecy nor requires constant full public disclosure; instead, it creates a cryptographically governed lifecycle in which benchmark operators are accountable for the passage of time as well as the correctness of individual runs.</p>
+    <p>There remain open research questions. Rotation cadence can be policy-driven today, but in the future it may be informed by leakage estimators, exposure metrics, or adversarial probing models. Another frontier is cross-organization federation, where multiple benchmark authorities jointly manage pre-commitments and rotation registries. Yet even in its present form, HSRP provides a substantial improvement over static hidden corpora with undocumented refresh schedules.</p>
+
+    <h1>10. Conclusion</h1>
+    <p>Static hidden datasets degrade, and benchmark certification must acknowledge that degradation. The Hidden-Seed Rotation Protocol provides a formal, timestamped, and cryptographically committed method for advancing hidden seed material over time without surrendering auditability or operational continuity. By combining scheduled seed advancement, pre-commitment to future epochs, explicit validity windows, bounded overlap, and deterministic registry verification, HSRP delivers temporal integrity for benchmark certification. In the FableBreaker setting, it complements evidence packs by ensuring that certified scores are not only authentic and traceable, but also temporally well-founded.</p>
+
+    <section class="references">
+        <h1>References</h1>
+        <ol>
+            <li>S. Haber and W. S. Stornetta, “How to Time-Stamp a Digital Document,” <em>Journal of Cryptology</em>, vol. 3, no. 2, 1991.</li>
+            <li>R. C. Merkle, “A Certified Digital Signature,” <em>Advances in Cryptology—CRYPTO '89</em>, 1990.</li>
+            <li>National Institute of Standards and Technology, <em>FIPS PUB 180-4: Secure Hash Standard</em>, 2015.</li>
+            <li>A. Fiat and A. Shamir, “How to Prove Yourself: Practical Solutions to Identification and Signature Problems,” <em>CRYPTO '86</em>, 1987.</li>
+            <li>S. Goldwasser, S. Micali, and R. Rivest, “A Digital Signature Scheme Secure Against Adaptive Chosen-Message Attacks,” <em>SIAM Journal on Computing</em>, vol. 17, no. 2, 1988.</li>
+            <li>FableBreaker Research Group, “Hidden Seed Governance Policy v1.0,” Internal Specification, ItsNotAI LABS, 2026.</li>
+            <li>FableBreaker Research Group, “Certification Registry State Transition Rules,” Internal Standard, ItsNotAI LABS, 2026.</li>
+            <li>F. Medina, “Temporal Validity Windows for Benchmark Claims,” Working Paper, ItsNotAI LABS Research Division, 2026.</li>
+            <li>M. Bellare and P. Rogaway, “Random Oracles are Practical,” <em>ACM CCS</em>, 1993.</li>
+            <li>R. Canetti, “Universally Composable Security: A New Paradigm for Cryptographic Protocols,” <em>FOCS</em>, 2001.</li>
+            <li>D. Eastlake and T. Hansen, <em>US Secure Hash Algorithms (SHA and SHA-based HMAC and HKDF)</em>, RFC 6234, 2011.</li>
+            <li>S. Laurie, A. Langley, and E. Kasper, <em>Certificate Transparency</em>, RFC 6962, 2013.</li>
+            <li>B. Schneier, <em>Applied Cryptography</em>, 2nd ed., Wiley, 1996.</li>
+            <li>J. L. van der Linden, “Test Security and Item Exposure in High-Stakes Assessment,” <em>Psychometrika</em>, vol. 75, no. 4, 2010.</li>
+        </ol>
+    </section>
+</article>
+</body>
+</html>

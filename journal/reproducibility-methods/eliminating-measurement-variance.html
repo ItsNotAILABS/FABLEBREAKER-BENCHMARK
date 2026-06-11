@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eliminating Measurement Variance in Performance Benchmarks: A Statistical Framework — FableBreaker Journal</title>
+    <link rel="stylesheet" href="../assets/css/paper.css">
+</head>
+<body class="has-nav">
+<nav class="nav-bar">
+    <a href="../index.html" class="nav-brand">FableBreaker Journal</a>
+    <a href="index.html">Reproducibility Methods</a>
+    <a href="../index.html#papers">All Papers</a>
+</nav>
+<article class="paper">
+    <header class="paper-header">
+        <div class="paper-journal">Journal of Reproducibility Methods · Volume 1 · 2026</div>
+        <h1 class="paper-title">Eliminating Measurement Variance in Performance Benchmarks: A Statistical Framework</h1>
+        <div class="paper-authors">Freddy Medina</div>
+        <div class="paper-affiliation">ItsNotAI LABS Research Division</div>
+        <div class="paper-date">June 2026</div>
+    </header>
+    <div class="abstract">
+        <h2>Abstract</h2>
+        <p>Performance claims in AI evaluation systems are meaningful only when the accompanying measurements are statistically stable. Yet many benchmark reports continue to treat a single timing observation as evidence of efficiency, despite well-understood perturbations introduced by operating-system scheduling, thermal regulation, garbage collection, cache warm-up, and frequency scaling. This paper develops a statistical framework for benchmark measurement in which repeated execution, robust aggregation, percentile reporting, warm-up control, baseline normalization, and confidence analysis are treated as inseparable components of the scoring protocol. We analyze the role of the repeat parameter as a variance-reduction mechanism, argue that medians dominate means under contamination by latency spikes, and show why percentiles such as p50, p95, and p99 are necessary for characterizing both typical and tail behavior. We further recommend reporting speedup as a ratio against a stable baseline rather than as raw elapsed time, enabling comparisons across heterogeneous hardware. The framework is connected to the FableBreaker scoring system, whose current design averages repeated evaluations per case, reports median and p95 timing summaries, and computes certified speedup only for semantically correct candidates. We extend that design with practical guidance for warm-up strategies, confidence intervals, and significance declarations suitable for benchmark operators seeking repeatable, defensible performance conclusions.</p>
+    </div>
+    <div class="keywords"><strong>Keywords:</strong> benchmark statistics, measurement variance, latency percentiles, median estimation, confidence intervals, warm-up, performance certification</div>
+
+    <h1>1. Introduction</h1>
+    <p>Benchmarking without statistics is numerology. A runtime reported to the nearest microsecond but measured once conveys an illusion of precision while providing no estimate of uncertainty. In modern computing systems, the observed duration of a benchmarked operation is a random variable influenced by numerous latent processes: task preemption, cache state, branch predictor history, memory pressure, thermal governor actions, garbage collection, and background interrupts, among others. Performance benchmarking therefore belongs not only to systems engineering but also to statistical inference.</p>
+    <p>AI benchmarks are particularly vulnerable because they often compare optimization-oriented candidate evaluators that may differ by small constant factors while running on shared infrastructure. If measurement variance is not controlled, the reported ordering of systems can flip from run to run. Worse, optimizers can exploit benchmark protocols that reward lucky outliers rather than stable improvements. A trustworthy benchmark must separate semantic correctness from measurement discipline and declare performance gains only when the evidence is robust.</p>
+    <p>This paper presents a statistical framework used to interpret and strengthen FableBreaker-style performance claims. The framework emphasizes six principles: repeated measurement, robust aggregation, percentile-based tail characterization, explicit warm-up, baseline normalization by ratios, and interval-based significance testing. The resulting protocol turns performance scoring from a single-number ritual into a reproducible empirical procedure.</p>
+
+    <h1>2. Sources of Measurement Variance</h1>
+    <p>Observed latency may be decomposed as <code>T = μ + ε</code>, where <code>μ</code> is the latent mean cost of the workload on a given system state and <code>ε</code> is measurement noise. In practice, <code>ε</code> is neither Gaussian nor stationary. It is heteroskedastic, heavy-tailed, and often bimodal. Understanding its sources is the first step toward controlling it.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Variance source</th>
+                <th>Mechanism</th>
+                <th>Observable symptom</th>
+                <th>Mitigation</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>OS scheduling</td>
+                <td>Context switches and CPU migration</td>
+                <td>Intermittent long-tail spikes</td>
+                <td>Isolation, affinity, repetition</td>
+            </tr>
+            <tr>
+                <td>Thermal throttling</td>
+                <td>Frequency reduction under heat</td>
+                <td>Latency drift during long runs</td>
+                <td>Temperature control, cooldowns</td>
+            </tr>
+            <tr>
+                <td>Garbage collection</td>
+                <td>Stop-the-world or concurrent collector events</td>
+                <td>Rare but extreme outliers</td>
+                <td>Warm-up, GC accounting, medians</td>
+            </tr>
+            <tr>
+                <td>Cache and branch predictor state</td>
+                <td>Cold misses or history loss</td>
+                <td>Slow early iterations, high first-run cost</td>
+                <td>Warm-up and phase separation</td>
+            </tr>
+            <tr>
+                <td>I/O and page faults</td>
+                <td>Disk access and memory paging</td>
+                <td>Multi-modal latency</td>
+                <td>Preloading, memory pressure control</td>
+            </tr>
+            <tr>
+                <td>Dynamic frequency scaling</td>
+                <td>Governor response to utilization</td>
+                <td>Run-order sensitivity</td>
+                <td>Fixed governor or baseline normalization</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>No single mitigation removes all of these effects. The benchmark operator must instead design a protocol that is robust to them. Importantly, robustness does not mean pretending variance disappears; it means quantifying and limiting the extent to which variance can change the reported conclusion.</p>
+
+    <h1>3. The Repeat Parameter as a Variance-Control Lever</h1>
+    <p>FableBreaker's scoring interface accepts a <code>repeat</code> parameter and executes each evaluator multiple times on the same case before dividing the elapsed time by the repeat count. This is more than a convenience. Repetition averages over transient noise and increases the timer signal-to-noise ratio, especially for short-running workloads where timer granularity or scheduler jitter may otherwise dominate the measurement.</p>
+    <p>Suppose an individual trial time is <code>T_i = μ + ε_i</code> with finite variance <code>σ²</code>. The repeated average <code>T̄_r = (1/r) Σ_{i=1}^r T_i</code> has variance <code>σ² / r</code> when the <code>ε_i</code> are independent. Real systems violate independence, but the qualitative effect remains: increasing <code>r</code> suppresses high-frequency noise. The practical implication is that benchmark operators should scale <code>repeat</code> upward until the within-case coefficient of variation falls below a target threshold.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Repeat</th>
+                <th>Effective timed work</th>
+                <th>Typical stability regime</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>1</td>
+                <td>Single trial</td>
+                <td>Unstable for sub-millisecond workloads</td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td>Light averaging</td>
+                <td>Useful for moderate workloads</td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td>Moderate averaging</td>
+                <td>Good default when cost is acceptable</td>
+            </tr>
+            <tr>
+                <td>10+</td>
+                <td>Strong averaging</td>
+                <td>Recommended for highly noisy environments</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>There is, however, a trade-off. Large repeat values increase benchmark runtime and can introduce thermal drift if the repeated block is too long. The correct policy is adaptive: use enough repeats that timing noise is small relative to the expected performance delta, but not so many that the measurement environment changes materially during the block.</p>
+
+    <h1>4. Why Medians Dominate Means</h1>
+    <p>Benchmark timing distributions are rarely symmetric. A candidate may run near a typical value most of the time and occasionally suffer a cache miss storm, scheduler interruption, or garbage collection pause. Under such contamination, the arithmetic mean is pulled upward by rare events, whereas the median remains stable so long as fewer than half the observations are corrupted. This finite-sample robustness is the primary reason medians are preferred for benchmark summaries.</p>
+    <p>Formally, the sample median has a breakdown point of 50 percent, while the mean has breakdown point zero in the presence of arbitrarily large outliers. In latency analysis, this is not an abstract robustness theorem; it reflects operational reality. A single tenfold outlier can materially distort a mean computed over small benchmark samples, but the same outlier leaves the median unchanged unless it shifts the central order statistic.</p>
+    <p>Accordingly, the FableBreaker scorer reports <code>candidate_median_ms</code> and <code>baseline_median_ms</code> for per-case timing lists. These statistics capture typical case cost more faithfully than means would. Means are still useful for resource accounting, particularly when computing total benchmark time, but they should not be the default stability summary for latency.</p>
+    <blockquote>The median answers the question: what is the typical case? The mean answers a different question: what is the expected cost including all rare disturbances? Benchmark operators need both, but must not confuse them.</blockquote>
+
+    <h1>5. Percentiles for Tail-Latency Characterization</h1>
+    <p>Medians alone are insufficient because they compress the upper half of the distribution into a single number. Tail latency matters operationally: a candidate evaluator that is slightly faster on most cases but catastrophically slow on the worst few may be unsuitable for certification pipelines or interactive use. Percentiles therefore complement medians by describing the upper tail.</p>
+    <p>FableBreaker already reports p95 for both candidate and baseline timing vectors using an order-statistic percentile function. We recommend extending this practice by routinely publishing p50, p95, and p99. The interpretation is straightforward. p50 equals the median, p95 characterizes serious but not extreme slowness, and p99 reveals near-worst-case tail behavior short of the maximum, which is often too unstable to summarize usefully.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Statistic</th>
+                <th>Interpretation</th>
+                <th>Use in reporting</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>p50</td>
+                <td>Typical case latency</td>
+                <td>Primary central summary</td>
+            </tr>
+            <tr>
+                <td>p95</td>
+                <td>High-latency but recurring events</td>
+                <td>Operator stability threshold</td>
+            </tr>
+            <tr>
+                <td>p99</td>
+                <td>Rare extreme events</td>
+                <td>Tail-risk disclosure</td>
+            </tr>
+            <tr>
+                <td>max</td>
+                <td>Single worst observation</td>
+                <td>Diagnostic only, not ranking basis</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>Percentiles must be interpreted in light of sample size. A p99 estimate from ten observations is meaningless. Operators should ensure enough independent timing observations exist for the reported percentile. When data are sparse, p95 is often the highest defensible percentile.</p>
+
+    <h1>6. Warm-up Strategies</h1>
+    <p>Warm-up is the deliberate separation of performance stabilization from measurement. The need arises because the first few executions of a workload may include one-time costs: importing modules, initializing caches, JIT compilation in managed runtimes, page faults, branch predictor training, or lazy allocation. Measuring these effects together with steady-state execution produces results that are neither cold-start nor steady-state in any interpretable sense.</p>
+    <p>A sound protocol therefore defines a warm-up stage <code>w</code> and a measured stage <code>r</code>. For each case, execute the evaluator <code>w</code> times without recording latency, then execute it <code>r</code> times while timing. The value of <code>w</code> depends on the runtime model. For interpreters with modest startup effects, a small warm-up such as 2-5 iterations is often sufficient. For JIT-managed environments, stabilization should be verified empirically by plotting latency versus iteration index until a plateau is observed.</p>
+    <p>Warm-up also applies to baselines. Failing to warm up the reference evaluator while warming up the candidate creates biased speedup ratios. Symmetry between baseline and candidate measurement paths is therefore essential.</p>
+
+    <h1>7. Baseline Normalization by Ratio</h1>
+    <p>Absolute times are fragile across hardware classes. A candidate that takes 2.0 ms on a workstation and 3.5 ms on a laptop may still exhibit the same optimization quality relative to the reference evaluator. Benchmark publication should therefore prefer normalized speedup ratios over raw times when ranking systems or comparing across operators.</p>
+    <p>The FableBreaker scorer computes</p>
+    <pre><code>speedup = total_baseline / total_candidate</code></pre>
+    <p>and returns a certified speedup only when there are no semantic failures. This is a principled design. Ratio normalization removes much of the multiplicative hardware effect and binds the performance claim to a known semantic baseline. It is not perfect, because baseline and candidate may respond differently to noise sources, but it is substantially more comparable than absolute times alone.</p>
+    <p>We further recommend computing ratios on matched case timings rather than on unmatched aggregate runs whenever possible. Let <code>b_i</code> and <code>c_i</code> be baseline and candidate times for case <code>i</code>. Then <code>r_i = b_i / c_i</code> exposes workload-dependent heterogeneity and allows median ratio, percentile ratio, and confidence intervals to be estimated directly.</p>
+
+    <h1>8. Confidence Intervals and Significance</h1>
+    <p>A benchmark should declare a speedup significant only when its uncertainty interval excludes no improvement. For ratio metrics this is most naturally done on the log scale. Define <code>y_i = log(b_i) - log(c_i)</code>. A positive mean or median of <code>y_i</code> indicates multiplicative speedup. Confidence intervals for <code>exp(mean(y_i))</code> or <code>exp(median(y_i))</code> may be obtained through bootstrap resampling over cases, which is robust to non-normal timing distributions.</p>
+    <p>We recommend the following rule: a candidate is declared significantly faster only if the 95 percent confidence interval for the chosen speedup estimator lies entirely above 1.0 and the candidate passes semantic certification. If the interval overlaps 1.0, the result should be reported as indistinguishable from baseline. This avoids overstating gains that are smaller than the ambient noise floor.</p>
+    <p>When should intervals not be trusted? First, when sample sizes are too small for stable resampling. Second, when benchmark cases are not exchangeable because they belong to strongly different workload strata. In such settings, intervals should be stratified by family, or the benchmark should report family-specific results in addition to global summaries.</p>
+
+    <h1>9. Statistical Design of the FableBreaker Scoring Framework</h1>
+    <p>The current FableBreaker scoring implementation embodies several good measurement principles already. It loads a fixed dataset, verifies semantic correctness against the reference evaluator using SHA-256 digests of canonicalized outputs, times both baseline and candidate on every case, applies the <code>repeat</code> parameter symmetrically, computes total-time speedup, and reports median and p95 latencies. Crucially, if any case is semantically incorrect, the published speedup is forced to zero. This prevents the common failure mode in which a faster but wrong evaluator receives credit for illegitimate work reduction.</p>
+    <p>From a statistical viewpoint, three design choices deserve emphasis. First, timing is per case rather than over an arbitrary mixed batch, which preserves workload-level granularity. Second, repeat-based averaging reduces timer noise before aggregate summaries are computed. Third, median and percentile reporting acknowledges that the latency distribution is not adequately represented by a single mean.</p>
+    <p>We view the current implementation as a strong core that should be surrounded by operator protocol: fixed warm-up counts, disclosure of CPU and governor settings, optional bootstrap intervals, and p99 reporting when sample size permits. None of these extensions require changing the scientific meaning of FableBreaker's scoring model; they refine how that model is measured and interpreted.</p>
+
+    <h1>10. Recommendations for Benchmark Operators</h1>
+    <ol>
+        <li>Use a deterministic dataset and fixed candidate/baseline versions before any timing begins.</li>
+        <li>Choose <code>repeat</code> so that per-case timing variance is materially smaller than the expected performance delta.</li>
+        <li>Warm up both baseline and candidate under identical conditions.</li>
+        <li>Report p50 and p95 at minimum; include p99 when the sample size supports it.</li>
+        <li>Rank systems using certified speedup ratios, not raw wall-clock times.</li>
+        <li>Publish hardware, OS, interpreter, power-governor, and thermal conditions alongside the scores.</li>
+        <li>Use confidence intervals and refrain from declaring significance when the interval overlaps parity.</li>
+        <li>Inspect family-level results to ensure gains are not confined to a narrow subset of workloads.</li>
+    </ol>
+    <p>These recommendations are intentionally conservative. The goal of a benchmark is not to maximize apparent separation between systems, but to minimize the risk of false conclusions.</p>
+
+    <h1>11. Conclusion</h1>
+    <p>Measurement variance is not an inconvenience to be ignored; it is a first-order property of performance data. By treating repetition, robust aggregation, percentile reporting, warm-up, baseline normalization, and interval estimation as components of a single framework, benchmark operators can transform noisy timing observations into defensible scientific claims. FableBreaker's scoring design already demonstrates several core commitments: repeated measurement, median and p95 summaries, and zero credit for semantically incorrect speedups. The broader framework developed here explains why those choices matter and how to extend them into a complete protocol for statistically rigorous benchmark operation.</p>
+
+    <section class="references">
+        <h1>References</h1>
+        <ol>
+            <li>J. W. Tukey. <em>Exploratory Data Analysis</em>. Addison-Wesley, 1977.</li>
+            <li>D. R. Cox and D. V. Hinkley. <em>Theoretical Statistics</em>. Chapman and Hall, 1974.</li>
+            <li>A. Georges, D. Buytaert, and L. Eeckhout. Statistically rigorous Java performance evaluation. <em>OOPSLA</em>, 2007.</li>
+            <li>A. Mytkowicz et al. Producing wrong data without doing anything obviously wrong! <em>ASPLOS</em>, 2009.</li>
+            <li>S. M. Blackburn et al. The DaCapo benchmarks: Java benchmarking development and analysis. <em>OOPSLA</em>, 2006.</li>
+            <li>P. J. Rousseeuw and A. M. Leroy. <em>Robust Regression and Outlier Detection</em>. Wiley, 1987.</li>
+            <li>B. Efron and R. Tibshirani. <em>An Introduction to the Bootstrap</em>. Chapman and Hall, 1993.</li>
+            <li>J. L. Hennessy and D. A. Patterson. <em>Computer Architecture: A Quantitative Approach</em>. Morgan Kaufmann, 6th edition, 2019.</li>
+            <li>Freddy Medina and ItsNotAI LABS Research Division. Scoring Protocol Integrity Under Adversarial Candidate Submission. <em>Journal of Benchmark Architecture</em>, 1, 2026.</li>
+            <li>Freddy Medina and ItsNotAI LABS Research Division. Deterministic Test Generation via Seed-Controlled Stochastic AST Synthesis. <em>Journal of Reproducibility Methods</em>, 1, 2026.</li>
+        </ol>
+    </section>
+</article>
+</body>
+</html>

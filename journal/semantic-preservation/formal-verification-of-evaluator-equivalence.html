@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Formal Verification of Evaluator Equivalence Under Rewriting Transformations — FableBreaker Journal</title>
+    <link rel="stylesheet" href="../assets/css/paper.css">
+</head>
+<body class="has-nav">
+<nav class="nav-bar">
+    <a href="../index.html" class="nav-brand">FableBreaker Journal</a>
+    <a href="index.html">Semantic Preservation</a>
+    <a href="../index.html#papers">All Papers</a>
+</nav>
+<article class="paper">
+    <header class="paper-header">
+        <div class="paper-journal">Journal of Semantic Preservation · Volume 1 · 2026</div>
+        <h1 class="paper-title">Formal Verification of Evaluator Equivalence Under Rewriting Transformations</h1>
+        <div class="paper-authors">Freddy Medina</div>
+        <div class="paper-affiliation">ItsNotAI LABS Research Division</div>
+        <div class="paper-date">June 2026</div>
+        <div class="paper-doi">FBJ-SP-2026-001</div>
+    </header>
+    <div class="abstract">
+        <h2>Abstract</h2>
+        <p>We study the proof obligations required to certify that an optimized evaluator for the FableBreaker AST language is semantically equivalent to the reference interpreter under semantics-preserving rewriting. The language is deliberately small but technically rich: it combines arithmetic over unbounded integers, tagged sums, binary products, lexical binding, duplication, erasure, repeated iteration, pattern matching, and explicit failure through <code>bomb</code>. These operators are sufficient to expose the pathologies that routinely invalidate informal optimization claims, including branch-sensitive dead-code elimination, incorrect reuse of shared values, and rewrites that preserve algebra over total integers but not evaluation behavior under partiality. We present a formal syntax and denotationally grounded operational semantics in both big-step and small-step styles, define observational equivalence over closed expressions, and develop a rewriting theory whose admissible rules preserve meaning on the benchmark domain. Particular attention is given to canonicalization: the benchmark does not compare raw host-language objects, but canonical JSON-serializable representatives whose SHA-256 digests serve as portable certificates. We prove that digest equality implies semantic equality for the FableBreaker value domain because the canonical form is deterministic and injective over reachable values. We further characterize the limits of this result, prove soundness and relative completeness of the verification procedure, and show why erasure and commutativity-based simplifications must be constrained by the language's evaluation discipline. The resulting framework turns performance claims into proof-bearing claims: an evaluator is faster only after it is formally shown to compute the same observable function.</p>
+    </div>
+    <div class="keywords"><strong>Keywords:</strong> operational semantics, evaluator equivalence, observational equivalence, rewriting systems, canonical forms, dead code elimination, semantic preservation, SHA-256 certification</div>
+
+    <section>
+        <h1>1. Introduction</h1>
+        <p>FableBreaker is designed around a methodological asymmetry: speed claims are cheap, whereas semantic guarantees are expensive. The benchmark therefore makes certification contingent on a proof obligation. Candidate evaluators may change traversal order, fuse arithmetic, eliminate allocations, shortcut pattern-matching dispatch, or normalize expressions prior to execution, but the resulting observable behavior must coincide with that of the reference semantics on every benchmark input. The central problem addressed in this paper is thus not how to optimize an evaluator, but how to verify that a proposed optimization preserves meaning under the exact semantics implemented by the benchmark language.</p>
+        <p>The language in <code>fablebreaker/astlang.py</code> is intentionally small enough to admit complete formalization and yet expressive enough to invalidate many common informal rewrite arguments. The constructors <code>pair</code> and <code>tag</code> produce nested structural values; <code>fst</code>, <code>snd</code>, and <code>match</code> consume them; <code>let</code> introduces lexical scope; <code>dup</code> models one-step sharing by binding the same value to two variables; <code>repeat</code> induces large operational traces; <code>erase</code> introduces an explicit proof-relevant notion of unused computation; and <code>bomb</code> makes non-preserving rewrites visible. Importantly, the semantics is not merely extensional arithmetic. Evaluation order, failure propagation, and the refusal to evaluate erased subterms all matter.</p>
+        <p>Three observations motivate the formal development. First, big-step reasoning is convenient for stating semantic equivalence but hides the operational commitments exploited by optimizers. Second, small-step reasoning exposes those commitments but makes equivalence harder to summarize. Third, the benchmark ultimately compares digests of canonical outputs rather than raw semantic derivations. A complete account must therefore connect the operational semantics of expressions to the canonical representation of values and then to the cryptographic digest used in scoring.</p>
+        <p>Our contribution is a unified verification pipeline. We define the semantic domain of FableBreaker, present mutually compatible big-step and small-step semantics, specify observational equivalence on closed terms, identify a safe fragment of rewriting transformations, and prove that canonical hashing yields a sound certificate of equality for terminating benchmark expressions. We also isolate the semantic hazards of dead code elimination and unrestricted algebraic normalization, especially in the presence of the <code>erase</code> operator and the asymmetric evaluation order of <code>mod</code>. The outcome is a formal basis for evaluator certification rather than heuristic confidence.</p>
+    </section>
+
+    <section>
+        <h1>2. The FableBreaker AST Language</h1>
+        <h2>2.1 Syntax</h2>
+        <p>Let <em>Var</em> be a countably infinite set of variables, <em>Tag</em> a finite set of tag names, and <em>Z</em> the integers. Closed expressions are generated by the grammar below.</p>
+        <pre><code>e ::= lit(n)
+    | var(x)
+    | pair(e, e)
+    | tag(k, e)
+    | add(e, e) | mul(e, e) | xor(e, e) | mod(e, e)
+    | let(x = e, e)
+    | erase(e_unused, e_body)
+    | dup(e, x_left, x_right, e_body)
+    | fst(e) | snd(e)
+    | match(e, x, {k_i ↦ e_i}, default?)
+    | repeat(e_count, e_seed, i, acc, e_body)
+    | bomb(ℓ)</code></pre>
+        <p>The concrete JSON encoding used by the repository is a first-order tree with an <code>op</code> field and operator-specific children. The two-argument constructor <code>erase</code> is intentionally asymmetric: its first child is proof-relevant operationally because a buggy optimizer may evaluate it, but it is semantically ignored by the reference evaluator. Similarly, <code>dup</code> is not syntactic sugar for two independent substitutions. It binds the same evaluated value to both names, making sharing explicit in the operational account.</p>
+        <h2>2.2 Semantic domains</h2>
+        <p>The run-time value domain <em>Val</em> is the least set satisfying</p>
+        <pre><code>v ::= n ∈ Z
+    | pair(v1, v2)
+    | tag(k, v)</code></pre>
+        <p>Environments are finite maps &sigma; : <em>Var</em> &rightharpoonup; <em>Val</em>. A configuration is written &lang;e, &sigma;&rang;. Because the reference implementation rejects unbound variables and malformed projections, semantic judgments may either produce a value or signal an error. We write <code>error</code> for the distinguished failure outcome and define the total observation domain <em>Obs</em> = <em>Val</em> + {<code>error</code>} for meta-theoretic statements. The benchmark dataset itself is restricted to terminating value-producing closed expressions, but correctness proofs must still account for the error cases because unsafe rewrites can move a term from the value-producing fragment to the failing fragment.</p>
+        <p>A subtle aspect of the implementation is the step budget. Every recursive entry to <code>_eval</code> increments a counter, and <code>repeat</code> performs an additional tick for each loop iteration. This budget is operational metadata rather than user-visible output. Accordingly, our equivalence relation abstracts from exact step counts unless we reason explicitly about performance certification. What must be preserved for semantic equivalence is the observable result in <em>Obs</em>, not the resource trace.</p>
+        <h2>2.3 Reachable-value invariant</h2>
+        <p>Although the scorer canonicalizes generic Python booleans, integers, strings, lists, tuples, and dictionaries, the reference evaluator generates only integers, tagged values, and pairs thereof. Lists and dictionaries appear only after canonicalization converts tuples into structured JSON-ready representatives. This restriction is essential for later injectivity arguments. We therefore distinguish the semantic value domain <em>Val</em> from the larger host-language representation domain used at the observation boundary.</p>
+    </section>
+
+    <section>
+        <h1>3. Operational Semantics</h1>
+        <h2>3.1 Big-step semantics</h2>
+        <p>The natural semantics relation &sigma; &vdash; e &dArr; v is defined inductively. Representative rules are shown below; omitted premises are standard well-formedness side conditions.</p>
+        <pre><code>(B-Lit)      -----------------------
+             σ ⊢ lit(n) ⇓ n
+
+(B-Let)      σ ⊢ e1 ⇓ v1     σ[x ↦ v1] ⊢ e2 ⇓ v2
+             ------------------------------------
+                 σ ⊢ let(x = e1, e2) ⇓ v2
+
+(B-Erase)    σ ⊢ ebody ⇓ v
+             -------------------------------
+             σ ⊢ erase(eunused, ebody) ⇓ v
+
+(B-Dup)      σ ⊢ e ⇓ v      σ[xl ↦ v, xr ↦ v] ⊢ ebody ⇓ w
+             ------------------------------------------------
+                    σ ⊢ dup(e, xl, xr, ebody) ⇓ w
+
+(B-Mod)      σ ⊢ er ⇓ vr    σ ⊢ el ⇓ vl    m = max(1, |vr|)
+             ------------------------------------------------
+                     σ ⊢ mod(el, er) ⇓ (vl mod m)</code></pre>
+        <p>The rule for <code>mod</code> deliberately evaluates the right operand before the left operand, matching the interpreter implementation. This choice is semantically irrelevant for total integer expressions, but it becomes visible in the presence of <code>bomb</code> or unbound variables. Therefore any optimization that assumes symmetric operand evaluation must either prove both sides total or preserve the right-before-left discipline.</p>
+        <p>Pattern matching is defined by first evaluating the scrutinee to a tagged value <code>tag(k, v)</code>. If <code>k</code> is present in the case dictionary, the corresponding arm is chosen; otherwise the default arm must exist. The payload is bound to the distinguished variable named by the node and the selected arm is evaluated under the extended environment. Projection operators <code>fst</code> and <code>snd</code> succeed only on pair values. The construct <code>repeat(c, s, i, acc, body)</code> evaluates <code>c</code> to a non-negative bounded integer, evaluates the seed expression once, and then iteratively evaluates the body under an environment extended with the current index and accumulator value.</p>
+        <h2>3.2 Small-step semantics</h2>
+        <p>For rewriting correctness it is useful to expose intermediate states. We therefore define a small-step relation on configurations with evaluation contexts. Let values be irreducible expressions <code>v̄</code> encoding semantic values. A configuration may also carry a loop frame for <code>repeat</code>. The reduction relation &rarr; is deterministic. For example:</p>
+        <pre><code>&lang;add(lit(n1), lit(n2)), σ&rang; → &lang;lit(n1 + n2), σ&rang;
+&lang;let(x = v̄, e), σ&rang; → &lang;e, σ[x ↦ ⟦v̄⟧]&rang;
+&lang;erase(eu, e), σ&rang; → &lang;e, σ&rang;
+&lang;fst(pair(v̄1, v̄2)), σ&rang; → &lang;v̄1, σ&rang;
+&lang;mod(v̄l, v̄r), σ&rang; → &lang;lit(⟦v̄l⟧ mod max(1, |⟦v̄r⟧|)), σ&rang;</code></pre>
+        <p>The evaluation-context grammar is non-standard only for <code>mod</code>, whose right context is reduced before its left context, and for <code>erase</code>, whose unused child is never placed in a context. Small-step semantics makes two proof obligations explicit: (i) any admissible rewrite must preserve the normal form reached from a closed configuration, and (ii) it must preserve the reduction-space restriction that some subterms are observationally absent. In particular, an optimizer that recursively simplifies every syntactic child violates the second obligation because the child recorded in <code>erase.value</code> is semantically dead by construction.</p>
+        <h2>3.3 Correspondence theorem</h2>
+        <p><strong>Theorem 1 (big-step/small-step adequacy).</strong> For every closed expression <em>e</em> and value <em>v</em>, we have &empty; &vdash; e &dArr; v if and only if &lang;e, &empty;&rang; &rarr;<sup>*</sup> &lang;v̄, &sigma;&rang; for some terminal encoding <em>v̄</em> of <em>v</em>. Likewise, big-step error coincides with reduction to a stuck or explicitly erroneous configuration. The proof is standard by induction on the derivation height for soundness and on reduction length for completeness, with dedicated lemmas for <code>repeat</code> and <code>match</code>.</p>
+    </section>
+
+    <section>
+        <h1>4. Observational Equivalence of Evaluators</h1>
+        <p>Let <em>E</em><sub>ref</sub> be the reference evaluator and <em>E</em><sub>opt</sub> a candidate evaluator. For a closed expression <em>e</em>, define the observation <em>O</em>(<em>E</em>, <em>e</em>) to be the value returned by <em>E</em> on <em>e</em>, or <code>error</code> if evaluation raises an exception, projects a malformed structure, exceeds the step budget, or otherwise fails. We say that two evaluators are observationally equivalent on a set <em>D</em> of closed terms, written <em>E</em><sub>ref</sub> &cong;<sub>D</sub> <em>E</em><sub>opt</sub>, when &forall;e &isin; D. <em>O</em>(<em>E</em><sub>ref</sub>, e) = <em>O</em>(<em>E</em><sub>opt</sub>, e).</p>
+        <p>This definition is extensional and domain-relative. FableBreaker certification takes <em>D</em> to be the benchmark language restricted to well-formed, closed JSON ASTs that the public and hidden generators can emit. Relative equivalence is appropriate because it matches the operational contract of the benchmark. A candidate is not required to handle arbitrary hostile Python objects or future language extensions; it is required to agree with the certified semantics on the current benchmark domain.</p>
+        <p>One may strengthen the relation to a contextual equivalence by quantifying over expression contexts <em>C</em>[&middot;] and requiring <em>O</em>(<em>E</em>, <em>C</em>[e]) = <em>O</em>(<em>E</em>, <em>C</em>[e&#8242;]). For first-order closed ASTs this contextual view collapses to expression equality under the reference semantics because every observable use of a value is already expressible within the language. We nevertheless keep the evaluator-level definition because benchmarking compares implementations, not source terms alone.</p>
+        <h2>4.1 Canonical-output equivalence</h2>
+        <p>The scorer does not compare host-language objects directly. It applies the repository's <code>canonical</code> function to the candidate result and then hashes the resulting JSON serialization. This yields a computable relation</p>
+        <pre><code>Eref ≈D Eopt  iff  ∀e ∈ D. digest(canonical(O(Eref,e))) = digest(canonical(O(Eopt,e)))</code></pre>
+        <p>Sections 6 and 7 will show that, on the value-producing fragment of the benchmark domain, <code>≈</code> coincides with observational equivalence because the canonical representation is injective over reachable values and SHA-256 equality entails equality of the serialized canonical payload. Failures remain directly observable because the scorer records exceptions as certification failures rather than hashing them.</p>
+    </section>
+
+    <section>
+        <h1>5. Rewriting Transformations and Correctness Proofs</h1>
+        <h2>5.1 Admissible rewrite schema</h2>
+        <p>A rewrite rule has the form <em>l</em> &rArr; <em>r</em> together with side conditions. It is <em>sound</em> when every closing substitution satisfying the side conditions preserves the big-step observation, and <em>locally complete</em> for a target optimization class when every semantically redundant redex in that class matches some rule. Table 1 summarizes a safe core set for FableBreaker.</p>
+        <table>
+            <thead>
+                <tr><th>Class</th><th>Rule</th><th>Side condition</th><th>Justification</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Constant folding</td><td><code>add(lit(a), lit(b)) → lit(a+b)</code></td><td>None</td><td>Arithmetic on total integer literals</td></tr>
+                <tr><td>Neutral element</td><td><code>add(e, lit(0)) → e</code></td><td><code>e</code> total and evaluated</td><td>Avoids changing failure or budget behavior</td></tr>
+                <tr><td>Projection</td><td><code>fst(pair(v1, v2)) → v1</code></td><td>Both are values</td><td>Constructor-destructor cancellation</td></tr>
+                <tr><td>Erasure</td><td><code>erase(eu, e) → e</code></td><td>Always</td><td>Specified by semantics, not heuristic DCE</td></tr>
+                <tr><td>Tag dispatch</td><td><code>match(tag(k,v), x, cases) → cases[k][x:=v]</code></td><td>Arm exists or default present</td><td>Case analysis by inversion</td></tr>
+                <tr><td>Associative normalization</td><td><code>add(add(a,b),c) → add(a,add(b,c))</code></td><td><code>a,b,c</code> total integers</td><td>Preserves result but not arbitrary failure order</td></tr>
+                <tr><td>Commutative ordering</td><td><code>add(a,b) → add(b,a)</code></td><td>Both operands total</td><td>Needed only for normalization, not semantics</td></tr>
+            </tbody>
+        </table>
+        <p>The side conditions are not decorative. In a total integer language, neutral-element elimination and commutative reordering are unconditional. In FableBreaker they are not. For example, <code>add(bomb("L"), lit(0))</code> fails, whereas the naively reduced term <code>bomb("L")</code> also fails and is therefore semantically equivalent. However, <code>mod(bomb("L"), bomb("R"))</code> is required to fail with the right-hand bomb under the reference interpreter. Swapping operands changes the observable error. Thus arithmetic laws preserve denotations only on a proof-carrying totality fragment.</p>
+        <h2>5.2 Correctness by induction and inversion</h2>
+        <p>Correctness proofs follow a common pattern. For constructor-destructor rules one proves a single-step simulation lemma in the small-step semantics and then lifts it to big-step equality by adequacy. For algebraic rules one uses inversion on the big-step derivations to show that the side conditions force both operands to evaluate to integers, after which standard integer algebra applies. For erasure, the proof is even stronger: the big-step rule <code>(B-Erase)</code> does not mention the erased child. Hence <code>erase(eu, e)</code> and <code>e</code> have identical derivations modulo one administrative constructor.</p>
+        <p><strong>Lemma 2 (duplication sharing).</strong> If &sigma; &vdash; e &dArr; v and &sigma;[x &mapsto; v, y &mapsto; v] &vdash; body &dArr; w, then &sigma; &vdash; dup(e,x,y,body) &dArr; w. Any rewrite replacing <code>dup(e,x,y,body)</code> by <code>let(x=e, let(y=e, body))</code> is unsound in the cost semantics and may be unsound in the error semantics if <code>e</code> can fail on re-evaluation under a different optimization schedule. The benchmark therefore treats <code>dup</code> as primitive.</p>
+        <h2>5.3 Rewriting algorithm</h2>
+        <p>The admissible rewriting engine can be stated as a recursively certified normalization pass:</p>
+        <pre><code>normalize(e):
+  case e of
+    erase(u, b):
+      return normalize(b)
+    add(lit(a), lit(b)):
+      return lit(a+b)
+    mul(lit(a), lit(b)):
+      return lit(a*b)
+    fst(pair(v1, v2)) where values(v1,v2):
+      return v1
+    snd(pair(v1, v2)) where values(v1,v2):
+      return v2
+    add(a, b):
+      a' = normalize(a); b' = normalize(b)
+      if total_int(a') and total_int(b') and order(a') &gt; order(b'):
+         return add(b', a')
+      return add(a', b')
+    ...
+  with proof obligations discharged at each recursive call</code></pre>
+        <p>The crucial phrase is “with proof obligations discharged.” A normalizer is correct not because it uses familiar rules, but because every application site proves the relevant side conditions. In an implementation this proof can be encoded by a static analysis, a refinement type, or an explicit semantic checker. FableBreaker itself adopts a simpler benchmark-level discipline: the reference evaluator and hash comparison certify the final result rather than trusting the optimizer's internal proof engine.</p>
+    </section>
+
+    <section>
+        <h1>6. Canonical Form and Output Comparison</h1>
+        <p>The reference semantics returns host-language tuples for <code>tag</code> and <code>pair</code>, whereas candidate evaluators may return structurally equivalent dictionaries or other representations permitted by the candidate contract. To compare outputs meaningfully, the scorer invokes the canonicalization function shown in the repository.</p>
+        <pre><code>def canonical(value):
+    if isinstance(value, bool): return value
+    if isinstance(value, int): return value
+    if isinstance(value, str): return value
+    if isinstance(value, list): return [canonical(x) for x in value]
+    if isinstance(value, tuple) and value[0] == "tag":
+        return {"tag": value[1], "value": canonical(value[2])}
+    if isinstance(value, tuple) and value[0] == "pair":
+        return {"pair": [canonical(value[1]), canonical(value[2])]}
+    if isinstance(value, dict):
+        return {str(k): canonical(v) for k, v in sorted(value.items())}</code></pre>
+        <p>Canonicalization performs two logically distinct tasks. First, it collapses representation variance, turning tuples and dictionaries into a uniform JSON-ready algebra. Second, it imposes a deterministic order on map keys and recursively canonicalizes every nested component. The resulting canonical form is the observation used for benchmark scoring. We write <em>can</em>(<em>v</em>) for this normal form.</p>
+        <p><strong>Proposition 3 (injectivity on reachable values).</strong> For all reachable semantic values <em>v</em><sub>1</sub>, <em>v</em><sub>2</sub> &isin; <em>Val</em>, if <em>can</em>(<em>v</em><sub>1</sub>) = <em>can</em>(<em>v</em><sub>2</sub>) then <em>v</em><sub>1</sub> = <em>v</em><sub>2</sub>. Proof: by structural induction on the canonical form. Integers map to themselves. Pairs are the only reachable values whose canonical image is a single-key dictionary <code>{"pair": [...]}</code>. Tags are the only reachable values whose canonical image is <code>{"tag": k, "value": ...}</code>. The constructors are disjoint, so equality of canonical images implies equality of constructors and recursively of subvalues.</p>
+        <p>This proposition explains why FableBreaker can compare outputs by canonical form rather than by interpreter-specific object identity. The canonical form is not merely convenient serialization; it is a faithful representative of the semantic value.</p>
+    </section>
+
+    <section>
+        <h1>7. Dead Code Elimination, Erasure Semantics, and Arithmetic Normalization</h1>
+        <h2>7.1 Erasure is semantic, not heuristic</h2>
+        <p>Dead code elimination is notoriously easy to overstate. In FableBreaker, there is exactly one unconditionally dead subterm form: the <code>value</code> child of <code>erase</code>. The evaluator comments make the contract explicit: “The erased value must not be evaluated.” This is stronger than a compiler optimization hint. It is part of the language semantics. Therefore replacing <code>erase(u, b)</code> with <code>b</code> is not an optimization justified by liveness analysis; it is a theorem by direct appeal to the defining semantics.</p>
+        <p>The pitfall is erasure inference. Suppose an optimizer reasons that the left child of <code>pair(e1, e2)</code> is unused because the surrounding context eventually projects the right child. Rewriting <code>snd(pair(bomb("x"), 7))</code> to <code>7</code> is extensionally valid for pure pairs, but if the optimizer obtains this result by evaluating and then discarding the left child, it will spuriously fail. Conversely, if it discards a subterm without a proof that the constructor guaranteeing non-use is present, it risks eliminating semantically required failures. The only sound general principle is this: erasure follows from syntax that the semantics already marks as erased.</p>
+        <h2>7.2 Associativity and commutativity under partiality</h2>
+        <p>Arithmetic operators <code>add</code>, <code>mul</code>, and <code>xor</code> are mathematically associative and commutative over integers. Yet evaluator optimization occurs before integerhood is known. A rewrite such as <code>add(a,b) → add(b,a)</code> is semantics-preserving only when both operands are guaranteed to terminate as integers and when error provenance is excluded from the observation relation. The benchmark's generated cases are value-producing, but a proof system for arbitrary rewrites must remain valid even off-distribution. We therefore formulate the rule with a totality side condition.</p>
+        <p>The <code>mod</code> operator is more delicate. Its right operand is evaluated first and transformed by <code>max(1, abs(...))</code>. This ensures non-zero moduli and makes the rule sensitive to both order and sign normalization. Reassociating nested modular arithmetic or swapping operands is unsound unless one proves the absence of errors and separately accounts for the right-first evaluation convention. Put differently, integer algebra is not a substitute for semantic proof when the evaluator is a partial function.</p>
+        <table>
+            <thead>
+                <tr><th>Candidate rewrite</th><th>Status</th><th>Counterexample or reason</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><code>erase(u,b) → b</code></td><td>Sound</td><td>By definition of <code>erase</code></td></tr>
+                <tr><td><code>fst(pair(v1,v2)) → v1</code></td><td>Sound</td><td>Constructor/destructor inversion</td></tr>
+                <tr><td><code>add(a,b) → add(b,a)</code></td><td>Conditional</td><td>Needs proof that both operands are total integers</td></tr>
+                <tr><td><code>mod(a,b) → mod(b,a)</code></td><td>Unsound</td><td>Wrong result and wrong failure order</td></tr>
+                <tr><td><code>dup(e,x,y,body) → let(x=e,let(y=e,body))</code></td><td>Unsound</td><td>Duplicates evaluation, violating sharing</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h1>8. Hash Verification as a Semantic Certificate</h1>
+        <p>The scorer computes <code>digest(canonical(result))</code> using SHA-256 over a key-sorted JSON serialization. We can now state the central certification theorem.</p>
+        <p><strong>Theorem 4 (hash equality implies semantic equivalence on the benchmark value domain).</strong> Let <em>e</em> be a closed benchmark expression such that both evaluators terminate successfully on <em>e</em>, producing values <em>v</em><sub>1</sub> and <em>v</em><sub>2</sub> in <em>Val</em>. If <code>digest(can(v1)) = digest(can(v2))</code>, then <em>v</em><sub>1</sub> = <em>v</em><sub>2</sub>. Hence the evaluators are observationally equivalent on <em>e</em>.</p>
+        <p><em>Proof.</em> SHA-256 equality implies equality of the serialized byte strings unless a cryptographic collision is found. Within the benchmark's threat model we exclude adversarially constructed collisions and rely on the standard collision-resistance assumption. Equality of byte strings implies equality of parsed canonical JSON values. By Proposition 3, equality of canonical values implies equality of semantic values. Therefore both evaluators return the same observation.</p>
+        <p>This theorem is intentionally domain-bounded. It does not claim that SHA-256 is globally injective, nor that hash equality can certify the equivalence of non-terminating computations or exceptions. It claims that within the benchmark's successful output domain, digest equality is a practical and mathematically justified witness of semantic equality. For failures, the scorer uses explicit failure reporting rather than digest comparison.</p>
+    </section>
+
+    <section>
+        <h1>9. Soundness and Relative Completeness of the Verification Approach</h1>
+        <p>We call the verification approach <em>sound</em> if every certified candidate evaluator is observationally equivalent to the reference evaluator on the benchmark domain. Soundness follows from three layers: (i) the reference evaluator implements the formal semantics; (ii) canonicalization is injective on reachable results; and (iii) the scorer rejects any candidate run whose canonical digest differs from the expected digest for any case. Hidden-seed generation strengthens the evidentiary value by reducing the chance that a candidate overfits the public corpus, but soundness itself is pointwise: a certified run has matched all evaluated cases.</p>
+        <p>Completeness is necessarily relative. No finite benchmark can prove equivalence on all closed terms of an infinite language. What FableBreaker offers is <em>relative completeness with respect to its verification basis</em>: if a candidate evaluator is observationally equivalent to the reference evaluator on the generated domain, then the scoring procedure will certify it. Moreover, if an optimizer uses only the admissible rewrite system of Section 5 together with faithful implementation of the remaining semantics, then every generated case will be certified. Thus the procedure is complete for the benchmark domain and for the chosen observational abstraction.</p>
+        <table>
+            <thead>
+                <tr><th>Verification layer</th><th>Soundness claim</th><th>Completeness claim</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Formal semantics</td><td>Big-step and small-step agree on observations</td><td>Every terminating derivation has a corresponding reduction trace</td></tr>
+                <tr><td>Rewrite theory</td><td>Admissible rules preserve observations under side conditions</td><td>All targeted simplifications are covered by some rule schema</td></tr>
+                <tr><td>Canonical hashing</td><td>Equal digest implies equal canonical output on domain</td><td>Equal canonical outputs always hash equally</td></tr>
+                <tr><td>Benchmark scoring</td><td>Any mismatch is rejected</td><td>Any matching candidate is certified</td></tr>
+            </tbody>
+        </table>
+        <p>The practical implication is methodological rather than philosophical. FableBreaker does not claim to solve program equivalence in the absolute sense. It claims to make benchmark-scale evaluator verification rigorous enough that optimization claims can be audited, reproduced, and falsified. That claim is both defensible and useful.</p>
+    </section>
+
+    <section>
+        <h1>10. Conclusion</h1>
+        <p>Evaluator optimization becomes scientifically meaningful only when paired with a semantics and a verifier. For the FableBreaker AST language, the required machinery is compact but nontrivial: precise operational semantics, explicit treatment of erasure and sharing, rewrite rules with side conditions, and an observation function grounded in canonical serialization and cryptographic hashing. The resulting certification path is strong enough to reject common unsound shortcuts while remaining lightweight enough for benchmark use. In this sense the benchmark's most important output is not a speedup number, but a transferable proof discipline for semantics-preserving optimization claims.</p>
+    </section>
+
+    <section class="references">
+        <h1>References</h1>
+        <ol>
+            <li>Felleisen, M., and Hieb, R. “The Revised Report on the Syntactic Theories of Sequential Control and State.” <em>Theoretical Computer Science</em>, 1992.</li>
+            <li>Harper, R. <em>Practical Foundations for Programming Languages</em>. Cambridge University Press, 2016.</li>
+            <li>ItsNotAI LABS. <em>FableBreaker Bench README</em>. Repository documentation, 2026.</li>
+            <li>ItsNotAI LABS. <em>fablebreaker/astlang.py</em>. Reference semantics and canonicalization implementation, 2026.</li>
+            <li>ItsNotAI LABS. <em>fablebreaker/scorer.py</em>. Correctness-first timing and certification harness, 2026.</li>
+            <li>Kahn, G. “Natural Semantics.” In <em>STACS</em>, 1987.</li>
+            <li>Leroy, X. “Formal Verification of a Realistic Compiler.” <em>Communications of the ACM</em>, 2009.</li>
+            <li>Milner, R. <em>Communication and Concurrency</em>. Prentice Hall, 1989.</li>
+            <li>Plotkin, G. D. “A Structural Approach to Operational Semantics.” Technical Report DAIMI FN-19, 1981.</li>
+            <li>Reynolds, J. C. “The Discoveries of Continuations.” <em>LISP and Symbolic Computation</em>, 1993.</li>
+            <li>Shao, Z. et al. “Certified Program Transformations.” <em>Journal of Automated Reasoning</em>, 2005.</li>
+            <li>Wadler, P. “Theorems for Free!” In <em>Functional Programming Languages and Computer Architecture</em>, 1989.</li>
+        </ol>
+    </section>
+</article>
+</body>
+</html>

@@ -1,0 +1,472 @@
+/* FableBreaker Research Journal — PDF-style Paper Layout */
+/* Renders academic papers in a clean, print-ready format on the web */
+
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Source+Sans+3:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+    --paper-width: 8.5in;
+    --paper-min-height: 11in;
+    --margin-top: 1in;
+    --margin-bottom: 1in;
+    --margin-left: 1in;
+    --margin-right: 1in;
+    --font-body: 'Source Serif 4', 'Times New Roman', serif;
+    --font-heading: 'Source Sans 3', 'Helvetica Neue', sans-serif;
+    --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+    --color-text: #1a1a1a;
+    --color-heading: #0d0d0d;
+    --color-accent: #2c3e50;
+    --color-link: #1a5276;
+    --color-border: #bdc3c7;
+    --color-bg: #fafafa;
+    --color-paper: #ffffff;
+    --color-code-bg: #f4f4f4;
+    --line-height: 1.65;
+    --font-size: 11pt;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    background: var(--color-bg);
+    font-size: var(--font-size);
+}
+
+body {
+    font-family: var(--font-body);
+    color: var(--color-text);
+    line-height: var(--line-height);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Paper container — simulates a physical page */
+.paper {
+    width: var(--paper-width);
+    min-height: var(--paper-min-height);
+    margin: 2rem auto;
+    padding: var(--margin-top) var(--margin-right) var(--margin-bottom) var(--margin-left);
+    background: var(--color-paper);
+    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08), 0 0 1px rgba(0, 0, 0, 0.12);
+    position: relative;
+}
+
+/* Header block */
+.paper-header {
+    text-align: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.paper-journal {
+    font-family: var(--font-heading);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--color-accent);
+    margin-bottom: 0.75rem;
+}
+
+.paper-title {
+    font-family: var(--font-heading);
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--color-heading);
+    line-height: 1.25;
+    margin-bottom: 0.75rem;
+}
+
+.paper-subtitle {
+    font-family: var(--font-heading);
+    font-size: 1.05rem;
+    font-weight: 300;
+    color: #555;
+    margin-bottom: 1rem;
+}
+
+.paper-authors {
+    font-family: var(--font-heading);
+    font-size: 0.9rem;
+    font-weight: 400;
+    color: #333;
+    margin-bottom: 0.25rem;
+}
+
+.paper-affiliation {
+    font-family: var(--font-heading);
+    font-size: 0.8rem;
+    color: #666;
+    font-style: italic;
+}
+
+.paper-date {
+    font-family: var(--font-heading);
+    font-size: 0.75rem;
+    color: #888;
+    margin-top: 0.5rem;
+}
+
+.paper-doi {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--color-link);
+    margin-top: 0.25rem;
+}
+
+/* Abstract */
+.abstract {
+    margin: 1.5rem 0;
+    padding: 1rem 1.5rem;
+    border-left: 3px solid var(--color-accent);
+    background: #f9fafb;
+}
+
+.abstract h2 {
+    font-family: var(--font-heading);
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-accent);
+    margin-bottom: 0.5rem;
+}
+
+.abstract p {
+    font-size: 0.92rem;
+    line-height: 1.55;
+    text-align: justify;
+}
+
+/* Keywords */
+.keywords {
+    font-family: var(--font-heading);
+    font-size: 0.8rem;
+    color: #555;
+    margin: 1rem 0 2rem;
+}
+
+.keywords strong {
+    font-weight: 600;
+}
+
+/* Section headings */
+h1 {
+    font-family: var(--font-heading);
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--color-heading);
+    margin: 2rem 0 0.75rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid #eee;
+}
+
+h2 {
+    font-family: var(--font-heading);
+    font-size: 1.0rem;
+    font-weight: 600;
+    color: var(--color-heading);
+    margin: 1.5rem 0 0.5rem;
+}
+
+h3 {
+    font-family: var(--font-heading);
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #333;
+    margin: 1rem 0 0.4rem;
+}
+
+/* Body text */
+p {
+    margin-bottom: 0.85rem;
+    text-align: justify;
+    hyphens: auto;
+}
+
+/* Lists */
+ul, ol {
+    margin: 0.75rem 0 0.75rem 1.5rem;
+}
+
+li {
+    margin-bottom: 0.35rem;
+}
+
+/* Code blocks */
+pre {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    background: var(--color-code-bg);
+    border: 1px solid #e0e0e0;
+    border-radius: 3px;
+    padding: 0.75rem 1rem;
+    margin: 1rem 0;
+    overflow-x: auto;
+    line-height: 1.5;
+}
+
+code {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    background: var(--color-code-bg);
+    padding: 0.15rem 0.35rem;
+    border-radius: 2px;
+}
+
+pre code {
+    background: none;
+    padding: 0;
+}
+
+/* Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.88rem;
+}
+
+thead {
+    border-bottom: 2px solid var(--color-accent);
+}
+
+th {
+    font-family: var(--font-heading);
+    font-weight: 600;
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    color: var(--color-heading);
+}
+
+td {
+    padding: 0.4rem 0.75rem;
+    border-bottom: 1px solid #eee;
+}
+
+tr:hover td {
+    background: #f9f9f9;
+}
+
+/* Figures */
+figure {
+    margin: 1.5rem 0;
+    text-align: center;
+}
+
+figcaption {
+    font-family: var(--font-heading);
+    font-size: 0.8rem;
+    color: #555;
+    margin-top: 0.5rem;
+    font-style: italic;
+}
+
+/* Blockquotes */
+blockquote {
+    margin: 1rem 0;
+    padding: 0.75rem 1.25rem;
+    border-left: 3px solid var(--color-border);
+    color: #444;
+    font-style: italic;
+}
+
+/* Definitions */
+dl {
+    margin: 1rem 0;
+}
+
+dt {
+    font-weight: 600;
+    margin-top: 0.75rem;
+}
+
+dd {
+    margin-left: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Footnotes */
+.footnotes {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border);
+    font-size: 0.82rem;
+}
+
+.footnotes ol {
+    margin-left: 1.25rem;
+}
+
+/* References */
+.references {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border);
+}
+
+.references h1 {
+    border-bottom: none;
+    margin-bottom: 1rem;
+}
+
+.references ol {
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.references li {
+    margin-bottom: 0.5rem;
+    padding-left: 0.25rem;
+}
+
+/* Links */
+a {
+    color: var(--color-link);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.15s;
+}
+
+a:hover {
+    border-bottom-color: var(--color-link);
+}
+
+/* Page numbers (decorative) */
+.page-number {
+    position: absolute;
+    bottom: 0.5in;
+    right: var(--margin-right);
+    font-family: var(--font-heading);
+    font-size: 0.75rem;
+    color: #999;
+}
+
+/* Navigation bar */
+.nav-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3.5rem;
+    background: #1a1a2e;
+    display: flex;
+    align-items: center;
+    padding: 0 2rem;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.nav-bar a {
+    font-family: var(--font-heading);
+    font-size: 0.85rem;
+    color: #e0e0e0;
+    text-decoration: none;
+    margin-right: 1.5rem;
+    border-bottom: none;
+    transition: color 0.15s;
+}
+
+.nav-bar a:hover {
+    color: #ffffff;
+}
+
+.nav-bar .nav-brand {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #ffffff;
+    margin-right: 2.5rem;
+    letter-spacing: 0.02em;
+}
+
+body.has-nav {
+    padding-top: 4.5rem;
+}
+
+/* Print styles */
+@media print {
+    html {
+        background: white;
+    }
+
+    .paper {
+        margin: 0;
+        box-shadow: none;
+        width: 100%;
+    }
+
+    .nav-bar {
+        display: none;
+    }
+
+    body.has-nav {
+        padding-top: 0;
+    }
+}
+
+/* Responsive adjustments */
+@media screen and (max-width: 9in) {
+    .paper {
+        width: 100%;
+        margin: 0;
+        padding: 1.5rem;
+        box-shadow: none;
+        min-height: auto;
+    }
+}
+
+/* Two-column layout for wider displays */
+.two-column {
+    column-count: 2;
+    column-gap: 1.5rem;
+    column-rule: 1px solid #eee;
+}
+
+/* Theorem/Definition blocks */
+.theorem, .definition, .lemma {
+    margin: 1rem 0;
+    padding: 0.75rem 1rem;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    background: #fdfdfd;
+}
+
+.theorem::before {
+    content: "Theorem.";
+    font-weight: 700;
+    margin-right: 0.5rem;
+}
+
+.definition::before {
+    content: "Definition.";
+    font-weight: 700;
+    margin-right: 0.5rem;
+}
+
+.lemma::before {
+    content: "Lemma.";
+    font-weight: 700;
+    margin-right: 0.5rem;
+}
+
+/* Algorithm blocks */
+.algorithm {
+    margin: 1rem 0;
+    padding: 1rem;
+    border: 1px solid #333;
+    background: #fefefe;
+}
+
+.algorithm-title {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid #333;
+    padding-bottom: 0.25rem;
+}
