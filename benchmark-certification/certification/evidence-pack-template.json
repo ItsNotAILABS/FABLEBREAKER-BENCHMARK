@@ -1,0 +1,18 @@
+{
+  "suite_id": "",
+  "suite_version": "",
+  "candidate_name": "",
+  "candidate_source_ref": "",
+  "public_score_ref": "",
+  "hidden_score_ref": "",
+  "public_seed": null,
+  "hidden_seed_commitment": "",
+  "case_count": null,
+  "correct": null,
+  "failed": null,
+  "certified": false,
+  "speedup_vs_reference": null,
+  "operator": "",
+  "timestamp_utc": "",
+  "notes": ""
+}

@@ -1,0 +1,16 @@
+{
+  "baseline_median_ms": 0.5638414999964425,
+  "baseline_p95_ms": 1.8230849999838483,
+  "baseline_total_seconds": 0.17366857499999355,
+  "candidate": "candidates.baseline_candidate",
+  "candidate_median_ms": 0.5314645000140672,
+  "candidate_p95_ms": 1.4548599999955059,
+  "candidate_total_seconds": 0.1608960960000161,
+  "cases": 240,
+  "certified": true,
+  "correct": 240,
+  "dataset": "dataset/public.jsonl",
+  "failed": 0,
+  "failures": [],
+  "speedup_vs_reference": 1.0793833990849362
+}

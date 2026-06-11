@@ -1,0 +1,18 @@
+{
+  "repo_surface": "benchmark-certification",
+  "version": "0.1.0",
+  "suites": [
+    {
+      "id": "fablebreaker",
+      "name": "FableBreaker Bench",
+      "path": "suites/fablebreaker",
+      "type": "semantic-preserving evaluator optimization benchmark",
+      "public_dataset": "suites/fablebreaker/dataset/public.jsonl",
+      "hidden_dataset_example": "suites/fablebreaker/dataset/hidden_seed_1701.jsonl",
+      "audit_runner": "suites/fablebreaker/tools/run_full_audit.py",
+      "candidate_contract": "Python module exposing evaluate(expr: dict) -> object",
+      "certification_rule": "Any wrong hash disables speed certification.",
+      "status": "active"
+    }
+  ]
+}

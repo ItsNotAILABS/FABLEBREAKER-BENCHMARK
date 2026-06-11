@@ -1,0 +1,16 @@
+{
+  "baseline_median_ms": 0.47235199963324703,
+  "baseline_p95_ms": 1.1183079996044398,
+  "baseline_total_seconds": 0.12544190100652486,
+  "candidate": "candidates.baseline_candidate",
+  "candidate_median_ms": 0.40502200045011705,
+  "candidate_p95_ms": 1.0658410001269658,
+  "candidate_total_seconds": 0.11258324800019182,
+  "cases": 240,
+  "certified": true,
+  "correct": 240,
+  "dataset": "/workspace/benchmark-certification/suites/fablebreaker/dataset/public.jsonl",
+  "failed": 0,
+  "failures": [],
+  "speedup_vs_reference": 1.1142146210447859
+}

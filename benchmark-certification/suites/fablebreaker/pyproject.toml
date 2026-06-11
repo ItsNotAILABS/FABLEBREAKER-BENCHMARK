@@ -1,0 +1,9 @@
+[project]
+name = "fablebreaker-bench"
+version = "0.1.0"
+description = "A reproducible benchmark packet for semantic-preserving evaluator optimization."
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
