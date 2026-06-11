@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game-Resistant Benchmark Design: Architectural Principles for Ungameable Evaluation — FableBreaker Journal</title>
+    <link rel="stylesheet" href="../assets/css/paper.css">
+</head>
+<body class="has-nav">
+<nav class="nav-bar">
+    <a href="../index.html" class="nav-brand">FableBreaker Journal</a>
+    <a href="index.html">Benchmark Architecture</a>
+    <a href="../index.html#papers">All Papers</a>
+</nav>
+<article class="paper">
+    <header class="paper-header">
+        <div class="paper-journal">Journal of Benchmark Architecture · Volume 1 · 2026</div>
+        <h1 class="paper-title">Game-Resistant Benchmark Design: Architectural Principles for Ungameable Evaluation</h1>
+        <div class="paper-authors">Freddy Medina</div>
+        <div class="paper-affiliation">ItsNotAI LABS Research Division</div>
+        <div class="paper-date">June 2026</div>
+    </header>
+    <div class="abstract">
+        <h2>Abstract</h2>
+        <p>Public AI benchmarks regularly degrade once they become optimization targets. Score inflation often arises not from broad capability gains but from contamination, scorer mimicry, benchmark-specific heuristics, and protocol exploitation. This paper develops an architectural account of benchmark integrity that treats evaluation as an exposed protocol rather than a static test set. We explain how Goodhart’s Law manifests in AI evaluation, derive design principles based on separation of generation, scoring, and verification, and formalize a dual-split model in which a public development distribution coexists with a hidden certification distribution. We then specify hash-locked correctness verification as a low-leakage oracle and describe a modular stack composed of an AST language, generator, scorer, and auditor. A threat model for benchmark gaming is used to motivate concrete controls, and the FableBreaker benchmark is analyzed as a reference implementation. Comparative analysis shows that data scale, coverage breadth, and transparent reporting remain insufficient when benchmark architecture leaves core attack surfaces exposed. The central conclusion is that game resistance is primarily an architectural property: a benchmark becomes scientifically durable only when its interfaces are designed under the assumption of adversarial optimization.</p>
+    </div>
+    <div class="keywords"><strong>Keywords:</strong> benchmark design, Goodhart’s Law, adversarial evaluation, hidden certification, hash verification, AST generation, benchmark security, FableBreaker</div>
+
+    <section>
+        <h1>1. Introduction</h1>
+        <p>Benchmarking in AI has historically been framed as a measurement problem. The standard workflow is to define a task, assemble a dataset, publish a metric, and compare systems by their score. This view is incomplete. Once a benchmark becomes salient, especially when rankings carry reputational or economic value, participants adapt not merely to the task but to the benchmark’s entire operational surface. Data distributions, formatting conventions, scoring idiosyncrasies, and infrastructure behavior all become targets for optimization. In that regime the benchmark is no longer a passive instrument. It is an adversarially exposed system.</p>
+        <p>This shift matters because AI progress claims are often built on benchmark deltas that are numerically small and methodologically consequential. A score increase of one or two percentage points may reflect a major algorithmic advance, but it may also reflect contamination, prompt tuning to leaderboard artifacts, exploitation of parser leniency, or memorization of recurring templates. Traditional benchmark papers typically recognize these risks only after distortion has become visible. Architectural hardening is treated as maintenance rather than as part of the benchmark’s scientific design.</p>
+        <p>The present paper argues for a different framing. The right question is not only whether a benchmark samples an interesting task distribution. The right question is whether the benchmark remains informative after repeated adaptive pressure. This requires design principles familiar from systems security: explicit trust boundaries, reduction of information leakage, component separation, structured auditing, and refresh mechanisms. A useful benchmark cannot be merely representative; it must also remain difficult to game in ways that decouple benchmark score from underlying capability.</p>
+        <p>FableBreaker was built from this premise. It is intended for evaluations where candidates are strongly incentivized to optimize both correctness and performance, while the operator must preserve scientific validity under strategic adaptation. Its architecture separates generation from scoring, scoring from verification, and public development from hidden certification. The result is not a metaphysically ungameable benchmark, which is impossible in the limit, but an evaluation framework in which gaming requires progressively more genuine task competence.</p>
+    </section>
+
+    <section>
+        <h1>2. Why Traditional Benchmarks Fail</h1>
+        <h2>2.1 Goodhart’s Law as a systems constraint</h2>
+        <p>Goodhart’s Law is often summarized as the claim that when a measure becomes a target, it ceases to be a good measure. For benchmark design, that statement can be sharpened. Let <code>Z</code> denote the latent capability of interest and <code>M</code> the observable benchmark score. A benchmark is initially valuable because <code>M</code> is correlated with <code>Z</code>. Once the benchmark is public and repeatedly optimized against, however, score becomes a function not only of capability but also of accessible regularities in the benchmark substrate. We can write <code>M = f(Z, L, P)</code>, where <code>L</code> denotes leakage in the content and <code>P</code> denotes protocol artifacts. Optimization can improve <code>M</code> via <code>L</code> and <code>P</code> without materially improving <code>Z</code>.</p>
+        <p>Benchmark distortion is therefore not a vague sociological phenomenon but a concrete structural failure: the benchmark allows participants to traverse easier optimization paths than the intended task supports. The scientific problem is to suppress those easier paths or make them expensive enough that genuine capability improvement is the more attractive route.</p>
+        <h2>2.2 Observable failure modes</h2>
+        <p>In practice, public benchmarks fail through several recurrent mechanisms. Static datasets are memorized directly or indirectly through contamination in training corpora, derivative tutorials, evaluation harnesses, and community discussion. Richly informative scorers expose gradients that permit candidates to approximate hidden answers or model scorer behavior without satisfying the benchmark’s true semantics. Monolithic evaluation harnesses conflate correctness and performance, allowing systems to receive credit for invalid but fast outputs. Fixed answer formats privilege surface matching over canonical semantic equivalence. Finally, public leaderboards reward special-purpose systems that are fragile outside the benchmark distribution but highly tuned to its presentation.</p>
+        <p>These problems do not disappear merely by adding more examples. A larger static benchmark may increase coverage while leaving the same leakage channels intact. Breadth without architectural controls can even enlarge the attack surface by providing more repeated structures for a candidate to exploit. Benchmark scale and benchmark integrity are therefore orthogonal dimensions.</p>
+        <h2>2.3 Benchmarking as repeated strategic interaction</h2>
+        <p>It is useful to model evaluation as a repeated game between operator and participant. The operator chooses hidden state, publishes some observable interface, and computes rewards from submissions. The participant adaptively constructs a strategy from public evidence and previous results. A benchmark remains useful only if the expected benefit of exploiting public regularities is lower than the expected benefit of solving more of the underlying task. Architectural design determines that inequality.</p>
+        <table>
+            <thead>
+                <tr><th>Failure mode</th><th>Mechanism</th><th>Scientific effect</th><th>Architectural response</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Contamination</td><td>Benchmark items enter training or retrieval corpora</td><td>Inflated apparent generalization</td><td>Public/hidden split separation and rotation</td></tr>
+                <tr><td>Scorer mimicry</td><td>Candidate learns evaluator quirks</td><td>Score without semantic validity</td><td>Separate verifier with low-bandwidth outcome channel</td></tr>
+                <tr><td>Harness exploitation</td><td>Timeout, caching, or parser policy is targeted</td><td>Artificial performance gains</td><td>Sandboxing and audited protocol semantics</td></tr>
+                <tr><td>Shortcut learning</td><td>Surface patterns predict acceptance</td><td>Poor transfer beyond benchmark</td><td>Procedural generation from controlled grammar</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h1>3. Architectural Principles</h1>
+        <h2>3.1 Separation of generation, scoring, and verification</h2>
+        <p>The foundational principle is decomposition. Let the generator be <code>G</code>, the candidate system be <code>C</code>, the verifier be <code>V</code>, and the scorer be <code>S</code>. A benchmark is game-resistant only if these components have distinct responsibilities and explicit interfaces:</p>
+        <pre><code>G(seed, policy) -> (instance x, witness w, metadata m)
+C(x) -> output y
+V(x, y, w) -> verdict in {valid, invalid}
+S(x, y, m) -> metrics
+A(logs, verdicts, metrics) -> audit bundle</code></pre>
+        <p>Traditional benchmarks often collapse <code>V</code> and <code>S</code>. That shortcut is convenient but unsafe. When the same routine both decides correctness and computes credit, every implementation detail becomes jointly targetable. By separating verification from scoring, one can impose the rule that only verifier-approved outputs receive performance credit. This is not a cosmetic refactoring; it changes the incentive structure of the benchmark.</p>
+        <h2>3.2 Minimal information exposure</h2>
+        <p>Each component should expose only what downstream consumers need. The generator should reveal public grammar and public splits, not hidden seeds. The verifier should reveal pass/fail or aggregate counts on certification splits, not rich mismatch traces. The scorer should return metrics without disclosing evaluator internals that would help construct a surrogate. The auditor should retain maximal evidence for operator replay while releasing only policy-approved summaries. In effect, benchmark architecture should follow the principle of least observability.</p>
+        <h2>3.3 Independent failure semantics</h2>
+        <p>Infrastructure failures must be distinguishable from candidate invalidity. Generator errors, verifier faults, and harness crashes are protocol events, not candidate behavior. If these conditions are silently collapsed into a generic failed submission state, operators cannot reason cleanly about fairness, and participants receive incentives to search for harness-instability exploits. Independent failure semantics are therefore part of scientific rigor.</p>
+    </section>
+
+    <section>
+        <h1>4. The Dual-Split Model</h1>
+        <h2>4.1 Public development split</h2>
+        <p>A usable benchmark must support iteration. The public split exists for this purpose. It should be representative, richly instrumented, and diagnostically transparent. Candidates need to observe error categories, reproduce failures, and reason about benchmark structure at a scientific level. The public split is where one wants learning, debugging, and community scrutiny.</p>
+        <h2>4.2 Hidden certification split</h2>
+        <p>Certification is a different activity. Its goal is not development convenience but trustworthy measurement under partial secrecy. Hidden certification instances are sampled from the same task family as the public split but from disjoint seeds, withheld templates, or unreleased parameter schedules. Feedback is intentionally sparse: aggregate metrics are published, but item-level traces and detailed mismatch data are withheld. This restricts the bandwidth available for benchmark inversion.</p>
+        <h2>4.3 Formal definition</h2>
+        <p>Let <code>D_pub</code> and <code>D_hid</code> be distributions induced by a generator family <code>G</code> under seed sets <code>S_pub</code> and <code>S_hid</code>, with <code>S_pub ∩ S_hid = ∅</code>. The benchmark satisfies alignment if task-relevant sufficient statistics <code>φ</code> obey <code>Δ(φ(D_pub), φ(D_hid)) ≤ ε</code> for a declared tolerance <code>ε</code>. It satisfies secrecy if an adversary’s advantage in predicting hidden instances from public artifacts is bounded by <code>δ</code>. Alignment ensures the hidden split is not arbitrary. Secrecy ensures it is not effectively public.</p>
+        <p>These requirements imply a generator-centric rather than corpus-centric philosophy. Hidden and public splits should be related by common generative laws, not by accidental resemblance among example files. This is especially important for program benchmarks, where compositional grammars and semantic constraints are more reliable than fixed corpora at preserving task identity across refreshes.</p>
+        <h2>4.4 Rotation and recertification</h2>
+        <p>No hidden split remains secure forever. As submissions accumulate, public discussion grows, and certified systems are analyzed, information about the hidden distribution leaks. A robust benchmark must therefore support split rotation: hidden seeds can be retired and replaced without changing the benchmark contract. Recertification on fresh hidden sets becomes an expected maintenance operation rather than an admission of failure.</p>
+    </section>
+
+    <section>
+        <h1>5. Hash-Locked Correctness Verification</h1>
+        <h2>5.1 Motivation</h2>
+        <p>Correctness oracles often leak more than benchmark designers realize. If the benchmark exposes reference outputs or detailed per-case mismatch traces, participants can approximate the hidden oracle without solving the underlying task. FableBreaker therefore uses a hash-locked verifier: the operator stores hidden witnesses and their cryptographic commitments, while the certification interface returns only validity and aggregate statistics.</p>
+        <h2>5.2 Canonicalization as the real trust anchor</h2>
+        <p>For a benchmark instance <code>x</code>, let <code>w</code> be the hidden witness and <code>κ</code> a canonicalization function. The verifier computes <code>w' = κ(x, w)</code> and <code>y' = κ(x, y)</code>, then checks whether <code>H(y') = H(w')</code> for a collision-resistant hash <code>H</code>. This procedure is meaningful only if canonicalization collapses semantically irrelevant differences while rejecting malformed outputs. In other words, the hash layer is the final commitment mechanism, but canonicalization is the semantic core of the oracle.</p>
+        <h2>5.3 Verification algorithm</h2>
+        <pre><code>Algorithm 1: Hash-locked verification
+Input: instance x, candidate output y, hidden witness w
+1: y' <- κ(x, y)
+2: w' <- κ(x, w)
+3: if normalization of y' fails then return invalid
+4: if semantic side-conditions on y' fail then return invalid
+5: if H(y') != H(w') then return invalid
+6: return valid</code></pre>
+        <p>Semantic side-conditions may include well-formedness, type preservation, observational equivalence on hidden probes, or resource-policy compliance. The important architectural point is that the benchmark can verify correctness without disclosing the witness itself. This sharply reduces information leakage relative to naive reference comparison.</p>
+        <h2>5.4 Security properties</h2>
+        <p>A hash-locked correctness oracle should satisfy three properties. <em>Soundness</em> means invalid outputs are accepted with negligible probability. <em>Canonical completeness</em> means all admissible semantically equivalent outputs map to the same digest. <em>Low leakage</em> means the public transcript reveals substantially less witness information than a full reference-output channel. None of these properties is automatic, but the architecture supports them.</p>
+    </section>
+
+    <section>
+        <h1>6. Modular Benchmark Components</h1>
+        <h2>6.1 AST language</h2>
+        <p>The AST language is the benchmark’s semantic substrate. It defines node types, typing rules, normalization laws, equivalence classes, and cost annotations. Explicit AST structure matters because it allows the benchmark to reason about instance construction and candidate output at a structural level rather than through opaque text templates. It also creates a stable target for canonicalization and verification.</p>
+        <h2>6.2 Generator</h2>
+        <p>The generator samples ASTs subject to semantic constraints, difficulty budgets, and adversarial motifs. Because generation is parameterized by seeds and policies, every instance can be replayed for audit while hidden instances remain unpredictable. Difficulty is encoded compositionally: grammar depth, operator diversity, latent symmetry, and transformation hazards are all controllable dimensions rather than accidental properties of a frozen dataset.</p>
+        <h2>6.3 Scorer</h2>
+        <p>The scorer computes quantitative measurements such as latency, throughput, success rate, and percentile behavior, but only for verifier-approved outputs. This ensures that performance optimization cannot masquerade as correctness. The scorer must be forbidden from making semantic judgments because scoring heuristics are otherwise easily turned into optimization targets.</p>
+        <h2>6.4 Auditor</h2>
+        <p>The auditor produces durable evidence: generator parameters, environment fingerprints, candidate artifact digests, verifier outcomes, and scoring traces. Auditability converts a leaderboard number into a defensible claim. Without an auditor, benchmark disputes degrade into informal trust contests.</p>
+        <table>
+            <thead>
+                <tr><th>Component</th><th>Function</th><th>Primary inputs</th><th>Primary outputs</th><th>Integrity contribution</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>AST language</td><td>Defines instance semantics</td><td>Grammar, typing rules</td><td>Canonical structural space</td><td>Constrains ambiguity</td></tr>
+                <tr><td>Generator</td><td>Produces instances and witnesses</td><td>Seeds, policies</td><td>Instances, witnesses, metadata</td><td>Controls diversity and secrecy</td></tr>
+                <tr><td>Scorer</td><td>Measures quantitative performance</td><td>Valid outputs, metadata</td><td>Metrics</td><td>Separates efficiency from validity</td></tr>
+                <tr><td>Auditor</td><td>Builds evidence chain</td><td>Logs, verdicts, metrics</td><td>Audit bundle</td><td>Supports replay and certification</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h1>7. Threat Modeling Against Benchmark Gaming</h1>
+        <p>Claims of game resistance are empty without an explicit threat model. We assume an adversary with access to all public benchmark artifacts, the ability to run repeated local experiments, and strong incentive to optimize against leaderboard semantics. We do not assume compromise of operator secrets, but we do assume aggressive exploitation of every observable benchmark regularity.</p>
+        <h2>7.1 Threat classes</h2>
+        <p><strong>Content attacks</strong> aim to reconstruct hidden instances or infer hidden seeds from public material. <strong>Scorer attacks</strong> target metric computation, timeout policies, or partial-credit rules. <strong>Verifier attacks</strong> exploit canonicalization ambiguities or malformed edge cases that induce false acceptance. <strong>Protocol attacks</strong> manipulate execution order, cache persistence, or filesystem assumptions. <strong>Reporting attacks</strong> use item-level diagnostics to train a surrogate evaluator.</p>
+        <h2>7.2 Defense-in-depth</h2>
+        <p>No single mechanism prevents all attacks. Hidden certification limits content leakage but does not protect an unsandboxed harness. Hash-locked verification limits answer leakage but does not address metric gaming. Audit bundles help resolve disputes but do not prevent exploitation. FableBreaker therefore treats benchmark security as layered defense across generation, execution, verification, scoring, and publication.</p>
+        <pre><code>Threat surface         Primary defense                       Residual risk
+Hidden-set recovery    Seed secrecy and split rotation       Distribution inference
+Verifier probing       Hash-locked outcomes                  Acceptance-bit probing
+Harness exploitation   Isolated execution and quotas         Microarchitectural leakage
+Leaderboard gaming     Aggregate-only certification          Public-split overfitting
+Audit disputes         Immutable evidence bundles            Policy mis-specification</code></pre>
+        <h2>7.3 Design objective</h2>
+        <p>The target is not absolute impossibility of gaming. The target is incentive alignment: improving benchmark score should require solving a larger fraction of the intended task than exploiting benchmark artifacts. A benchmark is successful when the cheapest path to leaderboard improvement passes through real capability.</p>
+    </section>
+
+    <section>
+        <h1>8. FableBreaker as a Reference Implementation</h1>
+        <p>FableBreaker instantiates these principles in a benchmark for semantic-preserving program transformation and adversarial evaluator stress testing. Instances are represented as typed ASTs with explicit normalization semantics. The generator emits public and hidden suites from a shared grammar family. Candidate submissions are executed in isolated scoring environments. Correctness is determined by verifier-side canonicalization and hash comparison against hidden witnesses. Timing metrics are computed only for valid outputs, and audit bundles preserve enough state for certification replay.</p>
+        <p>The notable feature of FableBreaker is not simply that it uses hidden data. Many benchmarks do that. Its contribution is boundary discipline. Generation, verification, scoring, and auditing are architecturally distinct. Public data is used for development, hidden data for certification. Verification is low leakage. Scoring is correctness-conditioned. Audit is mandatory. Together these choices reduce the degree to which a participant can benefit by learning benchmark internals instead of task semantics.</p>
+        <p>Because the benchmark is generator-centric, hidden splits can also be refreshed without redefining the task. That property is essential for long-term validity. Benchmark maintenance becomes rotation and recertification, not endless manual dataset patching.</p>
+    </section>
+
+    <section>
+        <h1>9. Comparative Analysis Against Existing Frameworks</h1>
+        <p>Static public benchmark suites remain useful for accessibility and broad reproducibility, but they are highly vulnerable to contamination and repeated overfitting. BIG-bench-style collections improve breadth yet usually remain public, so diversity does not itself confer secrecy. HELM-style reporting frameworks improve metric transparency and contextual reporting, but transparency alone does not suppress benchmark gaming when hidden certification and leakage control are absent. Dynabench-style interactive data collection addresses stale datasets and adversarial example collection, though without a separate certification channel adaptive collection can itself become a target. MLPerf demonstrates the value of policy rigor, auditing, and closed-division rules, but it is optimized for standardized performance testing rather than low-leakage semantic verification over procedurally generated hidden tasks.</p>
+        <table>
+            <thead>
+                <tr><th>Framework family</th><th>Primary strength</th><th>Main weakness under gaming</th><th>Contrast with FableBreaker</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Static public suites</td><td>Low barrier to entry</td><td>High contamination and memorization risk</td><td>FableBreaker uses procedural public and hidden splits</td></tr>
+                <tr><td>BIG-bench-style breadth</td><td>Task diversity</td><td>Public exposure of evaluation content</td><td>FableBreaker prioritizes secrecy plus replayable generation</td></tr>
+                <tr><td>HELM-style evaluation</td><td>Transparent reporting</td><td>Metrics remain targetable when instances are public</td><td>FableBreaker adds verifier separation and restricted feedback</td></tr>
+                <tr><td>Dynabench-style systems</td><td>Adaptive data collection</td><td>Collection loop can reveal target structure</td><td>FableBreaker decouples adaptation from certification</td></tr>
+                <tr><td>MLPerf-style benchmarks</td><td>Strong rules and auditing</td><td>Limited hidden semantic witness model</td><td>FableBreaker imports audit rigor into correctness-first tasks</td></tr>
+            </tbody>
+        </table>
+        <p>The lesson from this comparison is that breadth, freshness, transparency, and auditability are all valuable but incomplete. Benchmark architecture is the missing layer that decides whether these virtues survive strategic pressure.</p>
+    </section>
+
+    <section>
+        <h1>10. Discussion</h1>
+        <p>Several recommendations follow for benchmark authors. First, publish interfaces rather than answers: document APIs, resource policies, and aggregate metrics fully, but do not expose certification material that collapses necessary uncertainty. Second, treat development utility and certification validity as distinct functions requiring different disclosure policies. Third, prefer generator-centric benchmarks wherever the task admits structured synthesis, because procedural generation supports diversity, alignment checks, replay, and rotation. Fourth, invest in canonicalization and auditing early; both are foundational, not decorative.</p>
+        <p>There are also limitations. Dual-split systems require careful governance to maintain trust that hidden distributions remain aligned with public claims. Hash-locked verification depends on the quality of canonicalization. Procedural generation can still encode biases if generator policies are poorly chosen. None of these concerns invalidates the architecture; they define its research agenda. The benchmark community should devote as much effort to formalizing evaluation protocols as it has devoted to scaling datasets.</p>
+    </section>
+
+    <section>
+        <h1>11. Conclusion</h1>
+        <p>Traditional benchmarks fail because they are treated as datasets with scores rather than as adversarially exposed protocols. Goodhart’s Law is not a slogan attached after the fact; it is a design constraint that should shape benchmark architecture from inception. By separating generation, scoring, verification, and audit; by using public development and hidden certification splits; by verifying correctness through canonical hash-locked witnesses; and by explicitly threat-modeling benchmark gaming, one can build evaluation systems whose scores remain more strongly coupled to genuine capability. FableBreaker illustrates this approach as a reference implementation. Its broader message is simple: the least gameable benchmark is the one whose interfaces were designed in anticipation of being gamed.</p>
+    </section>
+
+    <section class="references">
+        <h1>References</h1>
+        <ol>
+            <li>Goodhart, C. A. E. (1975). Problems of monetary management: The U.K. experience.</li>
+            <li>Strathern, M. (1997). “Improving ratings”: Audit in the British University system. <em>European Review</em>.</li>
+            <li>Recht, B., Roelofs, R., Schmidt, L., &amp; Shankar, V. (2019). Do ImageNet classifiers generalize to ImageNet? <em>ICML</em>.</li>
+            <li>Kiela, D., et al. (2021). Dynabench: Rethinking benchmarking in NLP. <em>NAACL</em>.</li>
+            <li>Liang, P., et al. (2022). Holistic evaluation of language models. <em>TMLR</em>.</li>
+            <li>Srivastava, A., et al. (2023). Beyond the imitation game: Quantifying and extrapolating the capabilities of language models. <em>TMLR</em>.</li>
+            <li>Mattson, P., et al. (2020). MLPerf inference benchmark. <em>Proceedings of Machine Learning and Systems</em>.</li>
+            <li>Carlini, N., et al. (2023). Quantifying memorization across neural language models. <em>ICLR</em>.</li>
+            <li>Jacovi, A., Marasović, A., Miller, T., &amp; Goldberg, Y. (2021). Formalizing trust in artificial intelligence. <em>ACM Computing Surveys</em>.</li>
+            <li>Freddy Medina &amp; ItsNotAI LABS Research Division (2026). FableBreaker benchmark architecture specification.</li>
+        </ol>
+    </section>
+</article>
+</body>
+</html>

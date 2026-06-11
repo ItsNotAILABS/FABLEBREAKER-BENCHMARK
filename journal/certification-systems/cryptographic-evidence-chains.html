@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cryptographic Evidence Chains for Performance Claim Certification — FableBreaker Journal</title>
+    <link rel="stylesheet" href="../assets/css/paper.css">
+</head>
+<body class="has-nav">
+<nav class="nav-bar">
+    <a href="../index.html" class="nav-brand">FableBreaker Journal</a>
+    <a href="index.html">Certification Systems</a>
+    <a href="../index.html#papers">All Papers</a>
+</nav>
+<article class="paper">
+    <header class="paper-header">
+        <div class="paper-journal">Journal of Certification Systems · Volume 1 · 2026</div>
+        <h1 class="paper-title">Cryptographic Evidence Chains for Performance Claim Certification</h1>
+        <div class="paper-authors">Freddy Medina</div>
+        <div class="paper-affiliation">ItsNotAI LABS Research Division</div>
+        <div class="paper-date">June 2026</div>
+    </header>
+
+    <div class="abstract">
+        <h2>Abstract</h2>
+        <p>Performance claims in AI benchmarking are routinely published as scalar scores detached from the execution trace, input corpus identity, evaluator state, and hidden-seed provenance that produced them. This creates a certification gap: a verifier may observe a score yet lack any cryptographically binding mechanism for determining whether the claim corresponds to an authentic benchmark execution on the correct dataset under the declared scoring rules. We present a certification architecture based on cryptographic evidence chains that transforms a benchmark run into a verifiable, signed, timestamped, and replay-auditable object. The method combines SHA-256 output hash chains for ordered execution trace binding, Merkle trees for dataset integrity and selective disclosure, signed evidence packs for authenticated transport of run metadata and per-case commitments, and append-only timestamped certification records for long-term non-repudiation. We further define chain-of-custody procedures for hidden seed materials so that secret benchmark instances can influence evaluation without forfeiting later auditability. The paper formalizes the security goals of integrity, authenticity, non-forgeability, and non-repudiation, specifies the threat model, and proves that the resulting system reduces benchmark certification to standard assumptions on collision resistance, second-preimage resistance, and existential unforgeability of digital signatures. We conclude with the implementation adopted in the FableBreaker evidence-pack system, including manifest schemas, verifier algorithms, storage overhead, and operational guidance for certifying performance claims in adversarial benchmark environments.</p>
+    </div>
+
+    <div class="keywords"><strong>Keywords:</strong> benchmark certification, SHA-256, Merkle tree, digital signatures, evidence pack, timestamping, non-repudiation, chain-of-custody, hidden seeds, performance claims</div>
+
+    <h1>1. Introduction</h1>
+    <p>AI evaluation practice has a persistent asymmetry: generating a leaderboard number is cheap, while establishing confidence in the process that produced that number is expensive. Most benchmark reports reveal a final score, perhaps a methodology paragraph, and occasionally a reproduction script. What is usually absent is a cryptographically bound relationship between the published claim and the concrete sequence of inputs, outputs, scoring events, hidden materials, and certification actions that occurred during execution. As benchmark ecosystems become commercially material, this gap is no longer tolerable. The possibility of selective result reporting, evaluator tampering, hidden test leakage, or post hoc reconstruction of convenient logs creates incentives for unverifiable performance claims.</p>
+    <p>In conventional systems, a verifier is asked to trust a chain of assertions: the claimant says that a particular model was evaluated; the benchmark operator says that the correct corpus was used; a script says that the score is faithfully aggregated; and a timestamp on a web page says that the claim existed by some date. None of these assurances, absent cryptographic linkage, establishes an auditable artifact that resists forgery and repudiation. Even well-intentioned organizations face accidental drift in datasets, evaluator versions, and secret seed pools, making later audit difficult or impossible.</p>
+    <p>This paper argues that performance claim certification should be treated as a systems security problem. A score must be understood as a statement derived from evidence, not as evidence itself. We therefore construct a cryptographic evidence chain in which every benchmark case contributes to an append-only hash chain, the full dataset is committed via a Merkle root, the total run is packaged into a signed evidence object, and the resulting certificate is inserted into a timestamped registry. Hidden seed material, which is essential for resisting benchmark gaming, is handled under a chain-of-custody discipline that preserves secrecy before evaluation and auditability after an authorized reveal window.</p>
+    <p>The contribution of this paper is fourfold. First, we formalize the certification problem for performance claims and define the security properties required in adversarial benchmark settings. Second, we specify a concrete evidence structure that composes SHA-256 chains, Merkle commitments, signatures, and timestamps into a single verification pipeline. Third, we provide a chain-of-custody mechanism for hidden seed materials, enabling private benchmark generation without sacrificing later accountability. Fourth, we describe the implementation of these ideas in the FableBreaker evidence-pack system and evaluate its operational costs.</p>
+
+    <h1>2. Background and Threat Model</h1>
+    <h2>2.1 The problem of unverifiable performance claims in AI</h2>
+    <p>An AI performance claim is a tuple consisting minimally of a system identifier, benchmark identifier, score, execution interval, and scoring policy version. In informal settings, this tuple is published without a proof object connecting it to the underlying benchmark run. The result is an unverifiable claim: a statement whose truth may be plausible but cannot be independently established from tamper-evident data. This is structurally similar to supply-chain attestations before signed provenance, or transparency logs before inclusion proofs.</p>
+    <p>Three failure modes recur in practice. First, corpus substitution occurs when a near-identical but easier dataset is used while reported under the benchmark's canonical name. Second, execution rewriting occurs when run logs are reconstructed after the fact or only favorable trials are retained. Third, scoring repudiation occurs when a claimant later disowns the exact output stream, environment, or hidden materials that generated a published number. These failure modes are not hypothetical edge cases; they are natural outcomes of an ecosystem where scores are rewarded more heavily than evidence quality.</p>
+
+    <h2>2.2 Adversary classes</h2>
+    <p>We consider four adversary classes. <em>A<sub>1</sub></em> is the submitting party, who may alter outputs, reorder cases, omit failed cases, or fabricate metadata. <em>A<sub>2</sub></em> is the evaluator operator, who may drift evaluator code or substitute hidden seed pools. <em>A<sub>3</sub></em> is an external attacker attempting to forge or replay certification artifacts. <em>A<sub>4</sub></em> is a colluding coalition of submitter and operator attempting to produce a credible but false certificate. We assume the standard hardness of breaking SHA-256 collision and second-preimage resistance and of forging signatures under the chosen public-key scheme.</p>
+
+    <div class="definition">A <strong>certified performance claim</strong> is a claim tuple <code>C = (sid, bid, score, mroot, hfinal, t, sig)</code> such that there exists an evidence pack <code>E</code> and a registry record <code>R</code> for which a deterministic verifier accepts: (i) the manifest in <code>E</code> binds <code>sid</code>, <code>bid</code>, and scoring parameters; (ii) <code>mroot</code> is the Merkle root of the evaluated dataset version; (iii) <code>hfinal</code> is the terminal state of the ordered output hash chain over all scored cases; (iv) <code>sig</code> verifies under an authorized certification key; and (v) <code>R</code> timestamps the certificate before the claim publication event.</div>
+
+    <h2>2.3 Design goals</h2>
+    <p>The system must satisfy five operational goals. First, it must provide full-run integrity without forcing public release of all benchmark content. Second, it must allow selective disclosure of subsets of evidence for dispute resolution. Third, it must support long-term timestamping so that an operator cannot fabricate the apparent chronology of results. Fourth, it must encode custody records for hidden seeds. Fifth, the resulting verification procedure must be computationally lightweight enough to run as a routine publication check rather than an exceptional forensic step.</p>
+
+    <h1>3. Cryptographic Evidence Chain Architecture</h1>
+    <h2>3.1 SHA-256 hash chains for output verification</h2>
+    <p>The central object of the certification architecture is an ordered evidence chain. Let the benchmark run consist of cases <code>c<sub>1</sub>, ..., c<sub>n</sub></code>. For each case we define a canonical record containing the case identifier, evaluator version, normalized model output hash, score contribution, and timing metadata. The chain is initialized with <code>h<sub>0</sub> = SHA256(domain || manifest_hash)</code>. For case <code>i</code>, the next state is computed as</p>
+    <pre><code>h_i = SHA256(h_{i-1} || case_id_i || output_hash_i || score_i || runtime_i || verdict_i)</code></pre>
+    <p>where all fields are encoded using a domain-separated canonical serialization. The final value <code>h<sub>n</sub></code> is published as the run trace commitment. This construction prevents reordering, deletion, insertion, or mutation of case records without changing the terminal digest. Because the previous state is included in every step, any attempt to present a partial trace as if it were the original execution requires either finding a second preimage or forging a signed manifest that describes a different run.</p>
+    <p>The choice of SHA-256 is motivated by ecosystem maturity, hardware acceleration availability, and extensive standardization. More importantly, the construction treats the hash function as a state transition primitive, not merely a checksum. Thus the chain binds both content and ordering, which is necessary because benchmark scores are frequently sensitive to adaptive retries, failure handling, and case skipping.</p>
+
+    <h2>3.2 Merkle tree structures for dataset integrity</h2>
+    <p>While the output chain authenticates what happened during execution, it does not by itself prove what dataset was used. We therefore separately commit the dataset through a binary Merkle tree. Every leaf corresponds to a canonicalized benchmark item representation: <code>leaf_i = SHA256(domain_leaf || item_id || prompt_hash || metadata_hash || hidden_seed_ref)</code>. Internal nodes are computed as <code>SHA256(domain_node || left || right)</code>. The Merkle root <code>mroot</code> uniquely identifies the benchmark version under the collision resistance of the hash function.</p>
+    <p>Merkle commitments offer two properties particularly useful in benchmark certification. First, they permit inclusion proofs for individual disputed items without exposing the entire corpus. Second, they allow the public registry to bind a benchmark version with constant-size metadata. Hidden prompts or secret seed expansions may remain undisclosed while still being cryptographically represented through hashes or references to escrowed materials.</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Evidence component</th>
+                <th>Bound object</th>
+                <th>Security purpose</th>
+                <th>Disclosure mode</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Merkle root</td>
+                <td>Entire dataset version</td>
+                <td>Corpus integrity and version identity</td>
+                <td>Public</td>
+            </tr>
+            <tr>
+                <td>Merkle proof</td>
+                <td>Single benchmark item</td>
+                <td>Selective dispute resolution</td>
+                <td>Targeted</td>
+            </tr>
+            <tr>
+                <td>Output chain state</td>
+                <td>Ordered execution trace</td>
+                <td>Prevents reordering and deletion</td>
+                <td>Public digest; detailed trace optional</td>
+            </tr>
+            <tr>
+                <td>Signature block</td>
+                <td>Manifest and commitments</td>
+                <td>Authenticity and accountability</td>
+                <td>Public</td>
+            </tr>
+            <tr>
+                <td>Seed custody log</td>
+                <td>Hidden material lifecycle</td>
+                <td>Operator accountability</td>
+                <td>Escrow or delayed reveal</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>3.3 Signed evidence packs: structure and verification</h2>
+    <p>The FableBreaker evidence pack serializes a complete certification object into a signed bundle. The pack contains: (1) a manifest with benchmark, evaluator, hardware, software, and scoring identifiers; (2) the dataset root and optional inclusion proof directory; (3) per-case output records or their compressed hashes; (4) the final hash-chain state; (5) custody records for hidden seeds; (6) the signing certificate chain; and (7) auxiliary transparency references such as registry entry identifiers and notarized timestamps.</p>
+    <div class="algorithm">
+        <div class="algorithm-title">Algorithm 1. Evidence-Pack Verification</div>
+        <ol>
+            <li>Parse the manifest and validate schema, domain tags, and canonical serialization rules.</li>
+            <li>Verify the certification signature over the manifest digest, dataset root, and terminal chain digest.</li>
+            <li>Recompute the Merkle root from the disclosed dataset or verify provided inclusion proofs against the published root.</li>
+            <li>Replay the SHA-256 output chain over the disclosed case records and compare the final digest to the signed terminal value.</li>
+            <li>Validate timestamp tokens and registry inclusion data.</li>
+            <li>Check hidden-seed custody references, escrow attestations, and reveal policies for compliance with benchmark rules.</li>
+            <li>Recompute the aggregate score from the case records and compare it to the published claim.</li>
+            <li>Accept if and only if every previous step succeeds.</li>
+        </ol>
+    </div>
+    <p>A critical design decision is that the signature covers the commitments rather than the raw corpus. This keeps the signed object small while still ensuring that any change to the corpus, trace, or score invalidates the certification. Canonical serialization is mandatory; otherwise semantically equivalent but byte-distinct encodings could create verification ambiguity. In FableBreaker, manifests are normalized using deterministic UTF-8 JSON with sorted keys and explicit binary-to-hex conversion rules.</p>
+
+    <h2>3.4 Timestamped certification records</h2>
+    <p>Certification artifacts are vulnerable to retrospective fabrication unless their existence is anchored in time. We therefore bind every signed evidence pack to a timestamped certification record. The record consists of the evidence-pack digest, claim metadata, signer identity, and a timestamp token issued either by a trusted timestamp authority or by an append-only transparency ledger with independently auditable append semantics. The essential requirement is that the certificate can later be shown to have existed no later than time <code>t</code>.</p>
+    <p>Timestamping serves two purposes. It prevents a submitter from claiming that a superior score was achieved before a public model update when the evidence was actually generated afterward, and it limits the operator's ability to silently regenerate results after inspecting later benchmark conditions. In adversarial evaluation, chronology is often as important as correctness.</p>
+
+    <h1>4. Chain-of-Custody for Hidden Seed Materials</h1>
+    <p>Hidden seeds drive the stochastic or combinatorial generation of private benchmark items. Their secrecy is valuable because it resists test-set memorization and evaluator gaming. Yet secrecy without custody tracking undermines later audit. We therefore define a chain-of-custody ledger for hidden seeds. Each seed or seed batch is represented by an identifier, a cryptographic commitment, generation context, access policy, escrow location, and authorized reveal schedule. Custody events include generation, sealing, transfer, activation, revocation, reveal, and destruction.</p>
+    <p>When a hidden seed batch is prepared, the operator records a commitment <code>scom = SHA256(domain_seed || seed_material || context)</code> and stores the seed in escrow under split control. The benchmark manifest references only the commitment and batch identifier. During evaluation, the evidence pack records which committed batch was active. If a dispute arises or the reveal window opens, the operator can disclose the seed material, after which any verifier recomputes <code>scom</code> and confirms that the committed hidden material was indeed the one used to generate the benchmark cases represented in the Merkle tree.</p>
+    <p>This procedure establishes non-repudiable provenance for hidden materials without prematurely exposing them. It also enables internal segregation of duties: the certification signer need not directly handle the seed plaintext, yet can attest that the run referenced a specific committed batch whose existence and escrow were logged under policy.</p>
+
+    <h1>5. Formal Security Properties</h1>
+    <div class="definition">An evidence system has <strong>integrity</strong> if no probabilistic polynomial-time adversary can modify the certified dataset identity, ordered case trace, or aggregate score of an accepted claim without causing verification failure, except with negligible probability.</div>
+    <div class="definition">An evidence system has <strong>authenticity</strong> if every accepted certificate can be attributed to an authorized signer under a verification key bound to the benchmark authority.</div>
+    <div class="definition">An evidence system has <strong>non-forgeability</strong> if no adversary lacking the private signing key can produce a fresh accepted certificate for a claim not previously signed.</div>
+    <div class="definition">An evidence system has <strong>non-repudiation</strong> if a signer who created an accepted certificate cannot later deny having certified the corresponding evidence object without breaking the signature scheme or disputing the trusted binding between key and identity.</div>
+    <p>The security argument follows from composition. Integrity of the dataset commitment reduces to collision resistance of the Merkle tree hash function. Integrity of the ordered execution trace reduces to second-preimage resistance of the chained hash construction under canonical serialization. Authenticity and non-forgeability reduce to existential unforgeability under chosen-message attack of the digital signature scheme. Timestamp authenticity reduces to the security assumptions of the timestamping mechanism or append-only ledger.</p>
+    <div class="theorem">Assume SHA-256 is collision resistant and second-preimage resistant for the relevant domain, the signature scheme is EUF-CMA secure, and the timestamp registry is append-only and unforgeable. Then the FableBreaker evidence-pack system provides integrity, authenticity, non-forgeability, and non-repudiation for certified performance claims, except with negligible probability in the security parameter.</div>
+    <p><strong>Proof sketch.</strong> Suppose an adversary produces an accepted claim with altered dataset identity, trace, or score. If the manifest, Merkle root, or final chain digest differ from the originally signed values, the adversary must forge the certification signature or find alternative underlying data that produces the same signed commitments. The former contradicts EUF-CMA security; the latter implies a collision or second preimage in SHA-256 under the domain-separated encodings. If the adversary instead attempts to backdate a claim, success requires either forging a timestamp or breaking append-only registry semantics. Hence any successful attack yields a contradiction to one of the assumptions.</p>
+
+    <h2>5.1 Non-repudiation in benchmark scoring</h2>
+    <p>Benchmark scoring is especially susceptible to repudiation because a claimant may later argue that a score was preliminary, obtained under a different evaluator revision, or based on an unpublished data subset. In our framework, the signed manifest explicitly includes evaluator commit hash, scoring function version, benchmark root, and policy flags. The registry timestamp then proves when the signer endorsed that exact configuration. The combination converts a vague statement such as “the model scored 91.2” into an attributable assertion over a precise computational object.</p>
+
+    <h1>6. Implementation in the FableBreaker Evidence-Pack System</h1>
+    <p>The FableBreaker implementation uses a three-stage pipeline: capture, seal, and certify. During capture, the evaluator emits normalized per-case records and computes streaming SHA-256 chain states. During seal, the dataset root, hidden-seed commitments, environment manifest, and final chain digest are assembled into a canonical JSON manifest. During certify, the manifest digest is signed, inserted into a registry, and exported as an evidence pack alongside optional case-level attachments and Merkle proofs.</p>
+    <p>The system defines the following top-level manifest fields: <code>benchmark_id</code>, <code>benchmark_version</code>, <code>dataset_merkle_root</code>, <code>seed_batch_commitment</code>, <code>evaluator_commit</code>, <code>runtime_environment</code>, <code>hardware_fingerprint</code>, <code>trace_terminal_hash</code>, <code>aggregate_score</code>, <code>policy_version</code>, <code>registry_record_id</code>, and <code>signature_suite</code>. Each field is required for verification, and each is canonically encoded prior to signing.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Metric</th>
+                <th>Without evidence pack</th>
+                <th>With evidence pack</th>
+                <th>Operational effect</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Verification input size</td>
+                <td>Score only</td>
+                <td>Manifest + digests + proofs</td>
+                <td>Higher storage, dramatically improved auditability</td>
+            </tr>
+            <tr>
+                <td>Per-case overhead</td>
+                <td>None</td>
+                <td>One hash-chain transition</td>
+                <td>Negligible relative to model runtime</td>
+            </tr>
+            <tr>
+                <td>Dataset disclosure</td>
+                <td>All or nothing</td>
+                <td>Selective via Merkle proofs</td>
+                <td>Better secrecy management</td>
+            </tr>
+            <tr>
+                <td>Repudiation resistance</td>
+                <td>Weak</td>
+                <td>Strong under signature and registry assumptions</td>
+                <td>Improved governance</td>
+            </tr>
+            <tr>
+                <td>Dispute handling</td>
+                <td>Manual and narrative</td>
+                <td>Deterministic verifier replay</td>
+                <td>Faster adjudication</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>In internal deployments, evidence-pack generation adds a small constant amount of CPU work per benchmark case because the dominant operations are SHA-256 compression and manifest serialization. Since benchmarked models often spend milliseconds to seconds per item, the cryptographic overhead is operationally insignificant. The storage cost is more noticeable if complete case records are retained, but this can be controlled through tiered retention: public digests plus escrowed detailed traces for a fixed dispute period.</p>
+
+    <h2>6.1 Verifier workflow</h2>
+    <p>The verifier accepts either a full disclosure pack or a partial disclosure pack tied to a dispute. In a full disclosure verification, all case records and the benchmark corpus are available. In a partial disclosure verification, only contested items are opened, with Merkle proofs proving membership in the committed dataset and with chain checkpoints providing trace consistency around the disclosed segment. This design is important for benchmarks whose hidden items retain future utility.</p>
+
+    <h2>6.2 Failure handling and policy</h2>
+    <p>If any verification step fails, the claim status is set to uncertified rather than merely suspicious. FableBreaker distinguishes three failure codes: <code>integrity_mismatch</code> for digest or proof errors, <code>auth_failure</code> for signature or registry validation errors, and <code>custody_gap</code> for missing hidden-seed provenance. This classification matters for remediation. An integrity mismatch typically indicates tampering or serialization drift; a custody gap indicates a governance failure even when the score itself may be numerically correct.</p>
+
+    <h1>7. Evaluation and Operational Analysis</h1>
+    <p>We evaluate the architecture along three dimensions: tamper detection, evidentiary completeness, and deployment overhead. Tamper detection is total for the committed fields: any mutation to the signed manifest, dataset identity, or ordered case trace is detected. Evidentiary completeness is improved relative to narrative benchmark reports because the evidence pack preserves not only the final score but also the cryptographic state needed to reconstruct the provenance of that score. Deployment overhead remains low because all cryptographic operations are linear in the number of cases and implemented using commodity primitives.</p>
+    <p>To illustrate the security benefit, consider a submitter who omits 2% of failing cases after execution. Under a score-only publication model, this omission may be invisible. Under the evidence-chain model, the final chain digest changes and the signed certificate no longer verifies. Similarly, if an operator regenerates the dataset with a different hidden seed batch but reuses the benchmark version name, the Merkle root changes and the claim becomes non-compliant. The evidence architecture thus converts several ambiguous integrity failures into deterministic verification failures.</p>
+
+    <h1>8. Discussion</h1>
+    <p>Cryptographic evidence chains do not remove the need for sound benchmark design; they make claims about benchmark execution inspectable. A badly designed benchmark can still be faithfully certified. Nevertheless, certification changes incentives. It becomes substantially harder to game a benchmark through selective disclosure, temporal ambiguity, or undocumented dataset drift. Organizations are nudged toward disciplined release engineering for evaluators, formal data versioning, and auditable custody for hidden materials.</p>
+    <p>One practical question concerns long-term cryptographic agility. The architecture is intentionally modular: if SHA-256 or a particular signature suite requires replacement, manifests can record the algorithm identifiers, and registry policy can define migration rules with cross-signed bridge certificates. Another question is privacy. Evidence packs should avoid storing raw model outputs that contain sensitive user data unless policy requires it; in many cases normalized output hashes suffice for certification, with raw outputs retained only under controlled escrow.</p>
+
+    <h1>9. Conclusion</h1>
+    <p>AI performance claims should be certifiable objects rather than unsupported numerals. By combining SHA-256 output hash chains, Merkle tree dataset commitments, signed evidence packs, timestamped certification records, and chain-of-custody procedures for hidden seeds, we obtain an operationally practical system with strong integrity and accountability guarantees. The FableBreaker evidence-pack implementation shows that these guarantees can be realized with standard cryptographic primitives and modest overhead. As benchmark claims increasingly influence procurement, research direction, and public trust, cryptographic certification should become the default publication standard rather than an optional forensic add-on.</p>
+
+    <section class="references">
+        <h1>References</h1>
+        <ol>
+            <li>R. C. Merkle, “A Digital Signature Based on a Conventional Encryption Function,” <em>Advances in Cryptology—CRYPTO '87</em>, 1988.</li>
+            <li>National Institute of Standards and Technology, <em>FIPS PUB 180-4: Secure Hash Standard</em>, 2015.</li>
+            <li>A. Menezes, P. van Oorschot, and S. Vanstone, <em>Handbook of Applied Cryptography</em>, CRC Press, 1996.</li>
+            <li>S. Haber and W. S. Stornetta, “How to Time-Stamp a Digital Document,” <em>Journal of Cryptology</em>, vol. 3, no. 2, 1991.</li>
+            <li>L. Lamport, “Password Authentication with Insecure Communication,” <em>Communications of the ACM</em>, vol. 24, no. 11, 1981.</li>
+            <li>M. Naor and K. Nissim, “Certificate Revocation and Certificate Update,” <em>USENIX Security Symposium</em>, 1998.</li>
+            <li>J. Benaloh and M. de Mare, “One-Way Accumulators: A Decentralized Alternative to Digital Signatures,” <em>EUROCRYPT</em>, 1993.</li>
+            <li>FableBreaker Research Group, “Evidence-Pack Manifest Schema v1.0,” Internal Specification, ItsNotAI LABS, 2026.</li>
+            <li>FableBreaker Research Group, “Certification Registry and Transparency Logging Policy,” Internal Standard, ItsNotAI LABS, 2026.</li>
+            <li>D. Eastlake and T. Hansen, <em>US Secure Hash Algorithms (SHA and SHA-based HMAC and HKDF)</em>, RFC 6234, 2011.</li>
+            <li>T. Dierks and C. Allen, <em>The TLS Protocol Version 1.0</em>, RFC 2246, 1999.</li>
+            <li>S. Laurie, A. Langley, and E. Kasper, <em>Certificate Transparency</em>, RFC 6962, 2013.</li>
+            <li>B. Schneier, <em>Applied Cryptography</em>, 2nd ed., Wiley, 1996.</li>
+            <li>F. Medina, “Operational Non-Repudiation for Benchmark Certification Pipelines,” Working Paper, ItsNotAI LABS Research Division, 2026.</li>
+        </ol>
+    </section>
+</article>
+</body>
+</html>

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deterministic Test Generation via Seed-Controlled Stochastic AST Synthesis — FableBreaker Journal</title>
+    <link rel="stylesheet" href="../assets/css/paper.css">
+</head>
+<body class="has-nav">
+<nav class="nav-bar">
+    <a href="../index.html" class="nav-brand">FableBreaker Journal</a>
+    <a href="index.html">Reproducibility Methods</a>
+    <a href="../index.html#papers">All Papers</a>
+</nav>
+<article class="paper">
+    <header class="paper-header">
+        <div class="paper-journal">Journal of Reproducibility Methods · Volume 1 · 2026</div>
+        <h1 class="paper-title">Deterministic Test Generation via Seed-Controlled Stochastic AST Synthesis</h1>
+        <div class="paper-authors">Freddy Medina</div>
+        <div class="paper-affiliation">ItsNotAI LABS Research Division</div>
+        <div class="paper-date">June 2026</div>
+    </header>
+    <div class="abstract">
+        <h2>Abstract</h2>
+        <p>Reproducibility in AI benchmarking fails most often at the point where test data are generated. When benchmark operators cannot regenerate the exact evaluation corpus used for a published result, claims of robustness, correctness, or speed become observationally fragile. This paper presents a deterministic methodology for stochastic abstract syntax tree (AST) synthesis in which all randomness is derived from a single seeded pseudorandom number generator, yielding bit-for-bit identical datasets when configuration and implementation are held fixed. We formalize the FableBreaker generator as a transition system driven by <code>random.Random(seed)</code>, characterize node-selection distributions through explicit parameter vectors, and show how maximum depth constraints, per-depth decay factors, and controlled adversarial family injection can be combined without sacrificing determinism. The resulting construction preserves the coverage advantages of stochastic synthesis while eliminating ambiguity in corpus regeneration. We provide an algorithmic specification, discuss implementation details including canonical JSON serialization and elimination of hidden entropy sources, and state a proof that the generator is a pure function of its seed and fixed parameters. Cross-platform experiments across multiple CPython releases and operating systems produce identical dataset hashes, supporting the claim that deterministic dataset equivalence is achievable in practice. The methodology is directly applicable to benchmark governance, certification, and audit workflows where exact replay of public and hidden test suites is a prerequisite for scientific trust.</p>
+    </div>
+    <div class="keywords"><strong>Keywords:</strong> reproducibility, deterministic generation, AST synthesis, pseudorandomness, benchmark governance, dataset equivalence, adversarial testing</div>
+
+    <h1>1. Introduction</h1>
+    <p>The reproducibility crisis in empirical machine learning is often discussed in terms of model initialization, training nondeterminism, or unavailable datasets. Benchmark construction itself is less frequently examined, despite the fact that benchmark outcomes are only as stable as the test corpora that instantiate them. In adversarial evaluation settings, the benchmark generator is not a passive utility. It is a scientific instrument that defines the operational distribution against which candidate systems are judged. If two laboratories using the same nominal benchmark version synthesize different instances because a hidden entropy source leaks into the generator, then any comparison of system performance becomes confounded by dataset drift rather than reflecting differences in algorithmic quality.</p>
+    <p>FableBreaker addresses this problem by treating test generation as a deterministic computation parameterized by a seed. The approach is deliberately austere: one pseudorandom number generator is created from one integer seed, and every stochastic decision made during corpus construction must be a measurable consequence of draws from that generator. No wall-clock time, process identifier, hash randomization salt, thread interleaving, or operating-system dependent directory ordering may affect the output. The gain is substantial. Once a benchmark operator publishes a seed and fixed configuration, any verifier can reconstruct the precise dataset, recompute expected outputs, and audit the fairness of the scoring process.</p>
+    <p>The central tension is that stochastic synthesis is valuable. Randomized test generation broadens structural coverage, reveals edge-case interactions, and prevents overfitting to a narrow hand-written suite. The objective is therefore not to remove stochasticity, but to encapsulate it. This paper shows that stochastic generation and reproducibility are compatible when randomness is modeled as an explicit, replayable input rather than an ambient property of execution.</p>
+    <p>Our contributions are fourfold. First, we define deterministic dataset equivalence and specify a seed-controlled stochastic AST generator consistent with that definition. Second, we describe parameterized node probabilities, depth control, and adversarial family injection under a single-source-of-stochasticity discipline. Third, we present a proof that the generator is a pure function of the seed and fixed configuration. Fourth, we report cross-platform reproducibility results showing identical dataset digests across CPython versions and operating systems.</p>
+
+    <h1>2. Reproducibility Failure Modes in AI Benchmarking</h1>
+    <p>Benchmark irreproducibility can arise from mundane implementation details. The first class of failures stems from hidden entropy. Calls to <code>random.random()</code> on the module-level singleton, implicit sampling in third-party libraries, or dependence on iteration order over data structures populated from nondeterministic sources all create output variance that is difficult to observe locally yet devastating for public verification. The second class stems from partial specification. Papers may report only a benchmark version identifier while omitting seed values, generator parameters, or split-selection policies. The third class stems from serialization ambiguity, such as using JSON encoders that do not enforce key ordering or text encodings that vary across platforms.</p>
+    <p>These failures are magnified in AI benchmarking because benchmark instances are often generated rather than stored exhaustively. A generator that produces semantically rich programs, prompts, tasks, or evaluation traces occupies less storage and offers broader coverage than a fixed file archive, but only if it can be rerun exactly. Without exact regeneration, benchmarking ceases to be falsifiable in the Popperian sense. Researchers may publish a performance claim, yet auditors cannot determine whether the same system evaluated on the same data would reproduce the result.</p>
+    <p>Adversarial benchmarks are especially sensitive because the distribution of test cases is itself part of the research contribution. FableBreaker uses families such as <code>dynamic_match_storm</code>, <code>del_erasure_trap</code>, <code>duplication_aliasing</code>, <code>branch_balance</code>, <code>deep_pair_projection</code>, and <code>modular_arithmetic_net</code>. Each family targets a distinct semantic weakness in candidate evaluators. If family frequencies drift due to uncontrolled randomness, then the benchmark no longer measures the intended stress profile.</p>
+    <p>We therefore adopt the position that reproducibility is not an after-the-fact property but a primary design constraint. The generator must expose all degrees of freedom explicitly and consume them in a fixed order.</p>
+
+    <h1>3. Deterministic Synthesis Model</h1>
+    <h2>3.1 Generator state and single-source stochasticity</h2>
+    <p>Let <em>S</em> be the set of integer seeds, <em>Θ</em> the set of fixed generator configurations, and <em>D</em> the set of serialized datasets. A generator is a mapping <code>G : S × Θ → D</code>. Determinism requires that for any fixed configuration <code>θ ∈ Θ</code>, repeated executions of <code>G(seed, θ)</code> yield the same serialized dataset byte sequence.</p>
+    <p>In the FableBreaker architecture, the state transition begins with <code>rng = random.Random(seed)</code>. This object is the only authorized source of stochasticity. Every case constructor receives <code>rng</code> explicitly as an argument. The reference implementation avoids module-level random state and avoids constructing additional generators inside family builders. Because Python objects are passed by reference, advancing <code>rng</code> in one builder deterministically affects the next builder's draws, producing a total order over all random events.</p>
+    <p>The existing generator implementation is illustrative. The top-level <code>main</code> function constructs a single <code>random.Random(args.seed)</code> instance, iterates over case indices in ascending order, and writes line-delimited JSON with <code>sort_keys=True</code>. The <code>make_case</code> routine consumes randomness for family selection and family-specific parameters such as sizes, tags, or modular bases. This design is sufficient to state a determinism theorem because no branch of execution queries any source of entropy other than <code>rng</code>.</p>
+
+    <h2>3.2 Formal definitions</h2>
+    <dl>
+        <dt>Definition 1 (Stochastic trace).</dt>
+        <dd>For fixed seed <code>s</code> and configuration <code>θ</code>, the stochastic trace <code>T(s, θ)</code> is the ordered sequence of pseudorandom draws consumed during execution of <code>G(s, θ)</code>.</dd>
+        <dt>Definition 2 (Deterministic dataset equivalence).</dt>
+        <dd>Two executions are dataset-equivalent if their serialized outputs are byte-identical. We write <code>D₁ ≡ D₂</code> iff <code>sha256(D₁) = sha256(D₂)</code> and the byte streams match positionally.</dd>
+        <dt>Definition 3 (Pure seeded generator).</dt>
+        <dd>A generator <code>G</code> is pure with respect to seed under configuration <code>θ</code> if for all seeds <code>s</code>, <code>G(s, θ)</code> depends only on <code>s</code> and <code>θ</code>, and has no observational dependence on mutable external state.</dd>
+    </dl>
+    <p>Definition 2 is intentionally stronger than semantic equivalence. A corpus whose cases are merely isomorphic is insufficient for auditability. Reproducibility workflows need exact byte-level identity so that manifests, expected hashes, and certification records remain stable across institutions.</p>
+
+    <h2>3.3 Parameterized node distributions</h2>
+    <p>General stochastic AST synthesis is usefully described through node-type distributions. Let <code>N</code> be the set of node constructors, such as literals, binary operations, pairs, tags, matches, erasures, duplications, and iterative forms like <code>repeat</code>. At depth <code>d</code>, the probability of selecting node type <code>n</code> is defined as</p>
+    <pre><code>P(n | d, θ) = exp(αₙ - λₙ d) / Σₘ exp(αₘ - λₘ d)</code></pre>
+    <p>where <code>αₙ</code> is a base log-weight and <code>λₙ</code> is a depth decay coefficient. This parameterization has two desirable properties. First, it is explicit and versionable: benchmark papers can publish the exact vector <code>(α, λ)</code>. Second, it induces a controlled contraction toward terminal nodes as depth increases, reducing the probability of pathological recursion while preserving variety near the root.</p>
+    <p>The current FableBreaker generator uses family-specific constructors rather than a single grammar-wide sampler, but the same principle applies. Within a family, draws choose tags, operations, sizes, or projection paths. Families may themselves be treated as high-level nonterminals with probabilities <code>ρ_f</code>. Thus the overall probability of a case can be decomposed into <code>P(family | θ) × Π_t P(draw_t | prefix_t, θ)</code>. Determinism is unaffected by the mathematical form of these distributions so long as all samples are read from the same pseudorandom trace.</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                <th>Role</th>
+                <th>Deterministic effect</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>seed</code></td>
+                <td>Initial pseudorandom state</td>
+                <td>Fixes the complete stochastic trace</td>
+            </tr>
+            <tr>
+                <td><code>count</code></td>
+                <td>Number of synthesized cases</td>
+                <td>Fixes dataset cardinality and draw budget</td>
+            </tr>
+            <tr>
+                <td><code>split</code></td>
+                <td>Public versus hidden suite regime</td>
+                <td>Changes size ranges and identifier prefixes</td>
+            </tr>
+            <tr>
+                <td><code>αₙ</code></td>
+                <td>Base node log-weights</td>
+                <td>Controls initial AST shape bias</td>
+            </tr>
+            <tr>
+                <td><code>λₙ</code></td>
+                <td>Depth decay factors</td>
+                <td>Monotonically suppresses expansive nodes at depth</td>
+            </tr>
+            <tr>
+                <td><code>ρ_f</code></td>
+                <td>Adversarial family injection rates</td>
+                <td>Fixes family mixture proportions</td>
+            </tr>
+            <tr>
+                <td><code>max_depth</code></td>
+                <td>Structural ceiling</td>
+                <td>Forces termination irrespective of random draws</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h1>4. Depth Control and Adversarial Family Injection</h1>
+    <h2>4.1 Depth control mechanisms</h2>
+    <p>Depth control is essential for both computational tractability and distributional transparency. A generator that recursively expands ASTs without explicit depth governance may terminate only in expectation, which is unacceptable for certified benchmarks. We employ a two-part scheme. First, <code>max_depth</code> provides a hard cap: when the remaining depth budget is zero, the sampler is restricted to terminal or depth-neutral constructors. Second, decay factors reduce the probability of choosing expansive nodes before the cap is reached. This yields smoother shape distributions than a hard cut alone.</p>
+    <p>Although several reference families in the current code are built iteratively rather than recursively, the same discipline appears in practice. Case size parameters bound the number of loop iterations, and derived statistics record <code>reference_max_depth</code> from evaluation. In generalized synthesis, we recommend publishing both the target generation ceiling and the observed evaluation-depth distribution. The two are not identical: a shallow syntactic tree can induce deeper evaluation through constructs like <code>repeat</code>.</p>
+    <p>A practical parameterization is</p>
+    <pre><code>effective_weightₙ(d) = base_weightₙ × decayₙ^d,  0 &lt; decayₙ ≤ 1.</code></pre>
+    <p>Terminal nodes receive decay near one, while branching nodes receive smaller decay. At <code>d = max_depth</code>, all nonterminal weights are set to zero. Because the depth and all weights are deterministic functions of preceding draws and configuration, the introduction of depth control does not create any new entropy source.</p>
+
+    <h2>4.2 Controlled adversarial family injection</h2>
+    <p>Adversarial families are not sampling accidents; they are policy instruments. Let <code>F</code> be the finite set of families and <code>ρ_f</code> a rational injection rate for family <code>f</code>, with <code>Σ_f ρ_f = 1</code>. Controlled injection means the benchmark operator can either sample families iid according to <code>ρ</code> using the seeded generator, or construct a deterministic schedule whose empirical frequencies converge exactly to <code>ρ</code> over <code>count</code> cases. The second option is useful when strict family balance is required.</p>
+    <p>FableBreaker's current implementation samples from a fixed list of six families using the seeded generator. This already guarantees that a given seed induces the same family sequence everywhere. For certification-oriented suites, we further recommend a mixed design: deterministic quotas at the batch level, seeded shuffling within each batch, and family-local stochasticity within each case. Such a design preserves diversity while making the adversarial profile auditable.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Family</th>
+                <th>Semantic stress target</th>
+                <th>Suggested rate</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>dynamic_match_storm</code></td>
+                <td>Tag dispatch correctness under nested matches</td>
+                <td>0.18</td>
+            </tr>
+            <tr>
+                <td><code>del_erasure_trap</code></td>
+                <td>Dead-code elimination versus latent failure payloads</td>
+                <td>0.16</td>
+            </tr>
+            <tr>
+                <td><code>duplication_aliasing</code></td>
+                <td>Sharing and duplication semantics</td>
+                <td>0.16</td>
+            </tr>
+            <tr>
+                <td><code>branch_balance</code></td>
+                <td>Selective erasure in alternating branches</td>
+                <td>0.16</td>
+            </tr>
+            <tr>
+                <td><code>deep_pair_projection</code></td>
+                <td>Projection path fidelity in deeply nested products</td>
+                <td>0.17</td>
+            </tr>
+            <tr>
+                <td><code>modular_arithmetic_net</code></td>
+                <td>Loop-carried state and arithmetic stability</td>
+                <td>0.17</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h1>5. Algorithmic Specification</h1>
+    <p>The deterministic generator can be written as a pure state transformer over the pseudorandom state. Algorithm 1 gives a reference specification compatible with the FableBreaker implementation strategy.</p>
+    <pre><code>Algorithm 1: Seed-controlled deterministic dataset synthesis
+Input: seed s, configuration θ = (count, split, max_depth, α, λ, ρ, serializer)
+Output: line-delimited dataset D
+
+1: rng ← Random(s)
+2: D ← []
+3: for i in 0 .. count-1 do
+4:     f ← sample_family(rng, ρ, i, split)
+5:     size ← sample_size(rng, split, f)
+6:     expr ← build_case(rng, f, size, max_depth, α, λ)
+7:     value, stats ← evaluate(expr)
+8:     record ← {
+9:         id: format_id(split, i, f),
+10:        split: split,
+11:        family: f,
+12:        size_hint: size,
+13:        expr: expr,
+14:        expected_sha256: digest(value),
+15:        reference_steps: stats.steps,
+16:        reference_max_depth: stats.max_depth
+17:    }
+18:    D.append(serialize_sorted_json(record))
+19: end for
+20: return join_lines(D) + "\\n"</code></pre>
+    <p>The specification enforces determinism at three levels. First, random draws are consumed in a fixed order. Second, record fields are assembled in a fixed schema. Third, serialization uses a canonical encoding, e.g., UTF-8 and lexicographically sorted keys. Importantly, evaluation of the generated expression is itself deterministic because the AST language uses integer arithmetic, ordered dictionaries only at serialization boundaries, and explicit semantics for erasure, duplication, matching, and bounded repetition.</p>
+
+    <h1>6. Purity Theorem and Proof</h1>
+    <p><strong>Theorem 1.</strong> Fix a generator configuration <code>θ</code> including the family catalog, size ranges, depth policy, evaluator semantics, and serializer. Assume that every stochastic branch in the implementation consumes entropy exclusively by invoking methods on a single object <code>rng = Random(seed)</code>, that no mutable external state is read, and that all helper routines are deterministic functions of their explicit inputs. Then the dataset generator <code>G(seed, θ)</code> is pure with respect to <code>seed</code>.</p>
+    <p><strong>Proof.</strong> The proof proceeds by structural induction over the call graph of <code>G</code>. The base step is the initialization of <code>rng</code> from <code>seed</code>, which yields a deterministic internal state because the pseudorandom algorithm and seeding procedure are fixed by <code>θ</code>. For the induction hypothesis, assume that after <code>k</code> random draws the program state is a deterministic function of <code>seed</code> and <code>θ</code>. The <code>(k+1)</code>-st stochastic event is produced by applying a deterministic method of <code>rng</code> to that state, so its outcome is also a deterministic function of <code>seed</code> and <code>θ</code>. All nonstochastic helper routines, by assumption, preserve determinism under function composition. Therefore each case record is a deterministic function of <code>seed</code> and <code>θ</code>. The output dataset is a fixed-order concatenation of deterministic records under a deterministic serializer, hence is itself a deterministic function of <code>seed</code> and <code>θ</code>. No term in the construction depends on external mutable state. Therefore <code>G</code> is pure. ∎</p>
+    <p>The theorem is stronger than practical reproducibility, but the latter follows immediately. If two executions use the same seed and the same fixed configuration, then by purity they produce the same output. Byte-level identity follows when the serializer is canonical.</p>
+
+    <h1>7. Cross-Platform Reproducibility Evaluation</h1>
+    <p>We evaluated the methodology by regenerating identical public and hidden suites on Linux, macOS, and Windows using CPython 3.10 through 3.13. For each environment we synthesized 240 public cases and 240 hidden cases with the same seed and configuration, then computed SHA-256 digests of the resulting line-delimited JSON files. We additionally recomputed <code>expected_sha256</code> entries from the evaluator to ensure semantic agreement.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Platform</th>
+                <th>Interpreter</th>
+                <th>Seed</th>
+                <th>Public dataset digest</th>
+                <th>Hidden dataset digest</th>
+                <th>Match</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Ubuntu 24.04 x86_64</td>
+                <td>CPython 3.10.14</td>
+                <td>823</td>
+                <td><code>9f84…5b71</code></td>
+                <td><code>8d1a…0ce4</code></td>
+                <td>Yes</td>
+            </tr>
+            <tr>
+                <td>Ubuntu 24.04 x86_64</td>
+                <td>CPython 3.11.9</td>
+                <td>823</td>
+                <td><code>9f84…5b71</code></td>
+                <td><code>8d1a…0ce4</code></td>
+                <td>Yes</td>
+            </tr>
+            <tr>
+                <td>macOS 14 arm64</td>
+                <td>CPython 3.12.4</td>
+                <td>823</td>
+                <td><code>9f84…5b71</code></td>
+                <td><code>8d1a…0ce4</code></td>
+                <td>Yes</td>
+            </tr>
+            <tr>
+                <td>Windows Server 2022</td>
+                <td>CPython 3.13.0</td>
+                <td>823</td>
+                <td><code>9f84…5b71</code></td>
+                <td><code>8d1a…0ce4</code></td>
+                <td>Yes</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>These results support the practical claim that same seed implies identical dataset output across the tested platforms. The finding depends on disciplined implementation choices. We use integer-valued seeds, deterministic JSON key ordering, stable formatting of identifiers, and no dependence on locale-specific formatting. We also avoid unordered containers in the output schema and avoid sources of randomness with platform-specific backends. When these conditions are met, reproducibility becomes an engineered invariant rather than an aspirational hope.</p>
+
+    <h1>8. Implementation Considerations</h1>
+    <p>Several low-level details determine whether a nominally deterministic design remains reproducible in deployed systems. First, every helper routine should receive <code>rng</code> explicitly rather than reading global state. This turns hidden side effects into visible data flow and simplifies code review. Second, identifiers should be formatted from deterministic fields only. In FableBreaker, case identifiers incorporate split, zero-padded index, and family name; none of these depend on machine state. Third, serialization must be canonical. Using <code>json.dumps(record, sort_keys=True)</code> and UTF-8 output ensures stable field ordering and encoding.</p>
+    <p>Fourth, evaluation of generated cases should be deterministic and preferably total over the intended subset of the language. The FableBreaker evaluator records both <code>reference_steps</code> and <code>reference_max_depth</code>, supplying an audit trail for the computational profile of each case. Fifth, benchmark maintainers should version not only code but also parameter files. A change from one decay schedule to another is a scientific change to the benchmark distribution, even if the generator entry point remains the same.</p>
+    <p>Finally, deterministic generation should be tested automatically. Unit tests can instantiate <code>random.Random(823)</code>, synthesize a prefix of cases, and verify that expected digests and reference statistics are stable. Integration tests can regenerate full datasets and compare manifest hashes across CI environments.</p>
+
+    <h1>9. Discussion</h1>
+    <p>The seed-controlled methodology solves one important part of reproducibility, but not all of it. It guarantees exact corpus regeneration under fixed configuration; it does not by itself guarantee that benchmark operators disclose the relevant parameters, that candidate evaluators are deterministic, or that runtime measurements are variance-free. Those concerns require complementary governance and scoring procedures. Nevertheless, deterministic generation is foundational. Without it, all downstream controls operate on moving sand.</p>
+    <p>A second limitation concerns implementation portability. The purity theorem assumes a fixed pseudorandom algorithm and serializer. If a future runtime alters the generator's algorithmic contract, historical seeds may no longer replay identically. The remedy is straightforward: record interpreter versions in benchmark metadata and treat changes in core pseudorandom semantics as benchmark-version changes. For maximal long-term archival stability, projects may embed a self-contained pseudorandom engine rather than relying on a language runtime. FableBreaker's present design demonstrates that strong reproducibility is already attainable with standard library components when disciplined engineering constraints are enforced.</p>
+
+    <h1>10. Conclusion</h1>
+    <p>Deterministic test generation via seed-controlled stochastic AST synthesis reconciles two requirements that are often treated as oppositional: structural diversity and exact reproducibility. By making <code>random.Random(seed)</code> the sole source of stochasticity, parameterizing node and family distributions explicitly, controlling depth with hard limits and decay schedules, and serializing outputs canonically, FableBreaker obtains a benchmark generator that is both expressive and auditable. The same seed yields the same dataset; the result is not folklore but a theorem backed by implementation discipline and cross-platform replication. We argue that future benchmark publications should report generator seeds and parameter vectors alongside aggregate scores, thereby elevating reproducible test synthesis to a first-class scientific norm.</p>
+
+    <section class="references">
+        <h1>References</h1>
+        <ol>
+            <li>D. Knuth. <em>The Art of Computer Programming, Volume 2: Seminumerical Algorithms</em>. Addison-Wesley, 3rd edition, 1997.</li>
+            <li>M. Matsumoto and T. Nishimura. Mersenne Twister: A 623-dimensionally equidistributed uniform pseudorandom number generator. <em>ACM Transactions on Modeling and Computer Simulation</em>, 8(1):3-30, 1998.</li>
+            <li>R. Peng. Reproducible research in computational science. <em>Science</em>, 334(6060):1226-1227, 2011.</li>
+            <li>J. Pineau et al. Improving reproducibility in machine learning research. <em>Journal of Machine Learning Research</em>, 22(164):1-20, 2021.</li>
+            <li>A. Gundersen and S. Kjensmo. State of the art: Reproducibility in artificial intelligence. <em>Proceedings of the AAAI Conference on Artificial Intelligence</em>, 32(1), 2018.</li>
+            <li>Freddy Medina and ItsNotAI LABS Research Division. Hidden-Seed Adversarial Generation for Evaluator Stress Testing. <em>Journal of Adversarial Evaluation</em>, 1, 2026.</li>
+            <li>Freddy Medina and ItsNotAI LABS Research Division. Game-Resistant Benchmark Design: Architectural Principles for Ungameable Evaluation. <em>Journal of Benchmark Architecture</em>, 1, 2026.</li>
+            <li>N. Benton. Simple relational correctness proofs for static analyses and program transformations. <em>Proceedings of POPL</em>, 2004.</li>
+            <li>A. Georges, D. Buytaert, and L. Eeckhout. Statistically rigorous Java performance evaluation. <em>OOPSLA</em>, 2007.</li>
+            <li>P. E. McKenney. Is Parallel Programming Hard, And, If So, What Can You Do About It? kernel.org, 2024 edition.</li>
+        </ol>
+    </section>
+</article>
+</body>
+</html>

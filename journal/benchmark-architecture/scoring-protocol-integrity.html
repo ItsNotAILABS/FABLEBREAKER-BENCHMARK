@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scoring Protocol Integrity Under Adversarial Candidate Submission — FableBreaker Journal</title>
+    <link rel="stylesheet" href="../assets/css/paper.css">
+</head>
+<body class="has-nav">
+<nav class="nav-bar">
+    <a href="../index.html" class="nav-brand">FableBreaker Journal</a>
+    <a href="index.html">Benchmark Architecture</a>
+    <a href="../index.html#papers">All Papers</a>
+</nav>
+<article class="paper">
+    <header class="paper-header">
+        <div class="paper-journal">Journal of Benchmark Architecture · Volume 1 · 2026</div>
+        <h1 class="paper-title">Scoring Protocol Integrity Under Adversarial Candidate Submission</h1>
+        <div class="paper-authors">Freddy Medina</div>
+        <div class="paper-affiliation">ItsNotAI LABS Research Division</div>
+        <div class="paper-date">June 2026</div>
+    </header>
+    <div class="abstract">
+        <h2>Abstract</h2>
+        <p>In competitive AI evaluation, the scoring protocol is not a neutral wrapper around a task. It is the mechanism that schedules candidate artifacts, enforces resource policy, adjudicates correctness, measures runtime, and controls disclosure. When submissions are adversarially optimized, every one of those functions becomes an attack surface. This paper develops a formal and operational account of scoring protocol integrity under adversarial candidate submission. We analyze candidate isolation requirements, define hash verification as a low-leakage correctness oracle, examine timing measurement fidelity under realistic system noise, compare statistical aggregation schemes, and specify reproducibility obligations at the level of protocol state rather than benchmark narrative. We further discuss timing side-channels in hidden competitive benchmarks and present a protocol specification with explicit properties including isolation, verification soundness, metric admissibility, replay equivalence, and bounded leakage. The resulting framework is intended for benchmarks in which correctness and performance must be certified simultaneously without allowing protocol-aware exploitation to dominate benchmark outcomes.</p>
+    </div>
+    <div class="keywords"><strong>Keywords:</strong> scoring protocol, benchmark integrity, sandboxing, timing fidelity, side-channel defense, reproducibility, statistical aggregation, certification</div>
+
+    <section>
+        <h1>1. Introduction</h1>
+        <p>AI benchmarks are usually discussed as collections of tasks and metrics. Yet once a benchmark accepts executable artifacts or repeatedly scores adaptive systems, the protocol itself becomes part of what is being measured. The environment in which a submission executes, the timeout semantics that govern completion, the parser that interprets outputs, the verifier that decides correctness, and the aggregator that summarizes multiple trials together define an operational game. In competitive settings participants rationally optimize against that game.</p>
+        <p>This observation has immediate consequences. A candidate may learn to exploit scheduling artifacts, shape startup overhead to measurement windows, deliberately trigger parser ambiguities, or infer hidden test-set structure from latency and partial feedback. None of these behaviors need improve the underlying capability ostensibly measured by the benchmark. Nonetheless they can produce stable leaderboard gains if the protocol is permissive. A scoring protocol that is silent about these attack surfaces is not neutral; it simply delegates policy to implementation accidents.</p>
+        <p>The goal of protocol integrity is therefore to make the scoring process itself scientifically trustworthy under strategic pressure. That requires treating the protocol as a security-sensitive subsystem with formal properties and auditable implementations. The present paper offers such a treatment. While the motivating examples come from FableBreaker-style semantic benchmarks, the architecture is general and applies to code evaluation, agent evaluation, compiler optimization benchmarks, and any setting where correctness and performance must be certified simultaneously.</p>
+    </section>
+
+    <section>
+        <h1>2. The Scoring Protocol as an Attack Surface</h1>
+        <h2>2.1 Protocol decomposition</h2>
+        <p>A scoring protocol can be modeled as a transition system over states <code>(e, x, y, v, m, ℓ)</code>, where <code>e</code> is the execution environment, <code>x</code> an instance, <code>y</code> the candidate output, <code>v</code> the verification state, <code>m</code> the metric vector, and <code>ℓ</code> the observable log stream. Changing any transition rule changes the strategic environment. The protocol therefore cannot be factored away from the benchmark. It partly determines what “good performance” means in practice.</p>
+        <h2>2.2 Attack classes</h2>
+        <p><strong>Execution attacks</strong> exploit namespace leakage, writable mounts, inter-run state, or privileged system calls. <strong>Measurement attacks</strong> manipulate warm-up behavior, batching, clock choice, and host noise sensitivity. <strong>Parsing attacks</strong> use malformed or adversarial outputs to trigger inconsistencies between parser, verifier, and scorer. <strong>Feedback attacks</strong> infer hidden distributional properties from item-level diagnostics, failure classes, or response timing. <strong>State contamination attacks</strong> exploit caches, compiled artifacts, or preserved memory across runs. These categories are analytically distinct but operationally intertwined.</p>
+        <h2>2.3 Why protocol vulnerabilities persist</h2>
+        <p>Many protocol failures persist because they appear as harmless implementation conveniences. Reusing a container across runs saves startup time. Returning a detailed diff helps debugging. Averaging runtimes with the arithmetic mean is statistically familiar. Leaving filesystem caches warm improves throughput. Each choice is understandable in isolation. Under adversarial optimization, however, each becomes a channel by which benchmark score can be decoupled from intended capability. Protocol design must therefore be explicit enough that such choices are policy decisions, not defaults inherited from expedient code.</p>
+        <table>
+            <thead>
+                <tr><th>Layer</th><th>Default engineering shortcut</th><th>Adversarial consequence</th><th>Integrity control</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Execution</td><td>Shared environment reuse</td><td>Cross-run signaling or cache leakage</td><td>Fresh sandbox per scoring unit</td></tr>
+                <tr><td>Output handling</td><td>Lenient parser</td><td>Undefined acceptance region</td><td>Total canonicalizer with explicit error states</td></tr>
+                <tr><td>Timing</td><td>Single-shot mean reporting</td><td>Noise amplification and outlier gaming</td><td>Replicated trials with robust estimators</td></tr>
+                <tr><td>Publication</td><td>Item-level diagnostics</td><td>Hidden benchmark inversion</td><td>Aggregate-only certification reporting</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h1>3. Formal Model of Protocol Integrity</h1>
+        <p>Let a protocol be defined as <code>P = (Init, Exec, Verify, Measure, Aggregate, Audit)</code>. Given a candidate artifact <code>a</code>, hidden instance set <code>X</code>, hidden witness set <code>W</code>, and policy <code>π</code>, the protocol produces a certification record <code>R</code>. We define five core properties.</p>
+        <h2>3.1 Isolation</h2>
+        <p>For any two runs on instances <code>x_i</code> and <code>x_j</code>, execution of <code>a</code> on <code>x_i</code> should not influence the observable environment of <code>x_j</code> beyond policy-declared state. This is essentially a noninterference property. If the benchmark allows within-batch learning, that permission must be explicit and bounded. Otherwise fresh isolation domains are mandatory.</p>
+        <h2>3.2 Verification soundness</h2>
+        <p>Let <code>R_c(x, y, w)</code> denote the benchmark’s correctness relation. The protocol is verification-sound if accepted outputs satisfy <code>R_c</code> except with negligible probability due to implementation or cryptographic failure. Soundness requires not just a correct verifier but also correct routing of outputs, canonicalization, and verdict handling.</p>
+        <h2>3.3 Metric admissibility</h2>
+        <p>Certified performance metrics must be computed only over verifier-approved outputs. If invalid runs contribute to throughput or latency summaries, a candidate can intentionally trade correctness for speed while still benefiting in leaderboard position. Metric admissibility formalizes the rule that efficiency is meaningful only on semantically valid work.</p>
+        <h2>3.4 Replay equivalence</h2>
+        <p>Rerunning the protocol with the same candidate artifact, same hidden instances, and same environment manifest should yield identical correctness outcomes and timing summaries within an explicitly declared tolerance. Replay equivalence is weaker than perfect determinism yet strong enough to support audit and dispute resolution.</p>
+        <h2>3.5 Bounded leakage</h2>
+        <p>The public transcript of a scoring event should reveal no more information about hidden instances or witnesses than policy allows. This includes not just explicit reports but also timing, error classes, and publication cadence. Leakage is a protocol property, not only a cryptographic property.</p>
+    </section>
+
+    <section>
+        <h1>4. Candidate Isolation Requirements</h1>
+        <h2>4.1 Sandboxing</h2>
+        <p>Candidate isolation begins with sandboxing. The protocol should execute each scoring unit inside a domain that restricts system calls, filesystem visibility, network egress, privilege escalation, and shared-memory channels. Containers are often necessary but rarely sufficient. Stronger deployments combine namespaces, cgroup quotas, seccomp-like syscall filters, read-only root filesystems, and explicit denial of outbound networking except where networking is itself part of the task. The important point is not allegiance to a particular technology but enforcement of the benchmark’s trust boundary.</p>
+        <h2>4.2 Resource limits</h2>
+        <p>Isolation without quotas permits denial-of-service and protocol shaping. The benchmark must specify ceilings for CPU time, wall-clock time, memory, open files, thread count, output bytes, and scratch storage. These limits should be host-enforced, not self-reported by the candidate. Violations should produce typed outcomes such as <code>cpu_timeout</code>, <code>wall_timeout</code>, or <code>memory_exceeded</code> rather than a generic failure bucket. Typed failures matter because auditability requires distinguishing candidate behavior from protocol malfunction.</p>
+        <h2>4.3 Timeout policies</h2>
+        <p>Timeout semantics are a frequent source of leaderboard distortion. A wall-clock-only policy can be gamed by CPU-bursty strategies under host contention. A CPU-time-only policy can be gamed by blocking on I/O or sleeping. The protocol should therefore enforce both CPU and elapsed time. When initialization cost is significant, setup and steady-state execution should be measured separately or normalized through a fixed warm-up regime. Otherwise candidates can overfit to submission granularity rather than actual algorithmic efficiency.</p>
+        <h2>4.4 Run lifecycle</h2>
+        <pre><code>Algorithm 1: Isolated run
+1: env <- fresh_sandbox(manifest, quotas)
+2: mount task assets read-only; deny network by default
+3: pin env to declared CPU set and clock source
+4: start monitors for cpu, wall, memory, fds, output bytes
+5: execute candidate artifact a on instance x
+6: on quota violation, terminate and emit typed status
+7: canonicalize output and invoke verifier
+8: seal run record and destroy env</code></pre>
+        <p>Fresh destruction at the end of the run is as important as initialization at the beginning. Residual state is itself a communication channel. If cross-run learning is not intended, there must be no persistent writable state across hidden instances.</p>
+    </section>
+
+    <section>
+        <h1>5. Hash Verification as Correctness Oracle</h1>
+        <p>Certification benchmarks need a correctness oracle that is reproducible yet low leakage. A practical design is hash-based verification layered on canonicalization. For each hidden instance <code>x</code>, the operator stores a canonical witness <code>w' = κ(x, w)</code> and digest <code>d = H(w')</code>. Given candidate output <code>y</code>, the verifier computes <code>y' = κ(x, y)</code>. The run is valid only if canonicalization succeeds, semantic side-conditions hold, and <code>H(y') = d</code>.</p>
+        <p>The crucial feature is that the protocol never needs to expose the witness itself. This sharply reduces the usefulness of repeated probing. Participants learn whether they satisfied the correctness relation, but not how their output differed from the hidden witness. The design also supports replay: the operator can later reconstruct the exact verification path using stored witnesses, canonical forms, and digests.</p>
+        <h2>5.1 Oracle properties</h2>
+        <p>A hash verification oracle should satisfy determinism, canonical completeness, and soundness. Determinism ensures equivalent admissible outputs receive the same verdict. Canonical completeness ensures semantically equivalent outputs map to the same canonical form. Soundness ensures invalid outputs are not accepted except with negligible probability. These properties live or die with the canonicalizer, not with the hash function alone.</p>
+    </section>
+
+    <section>
+        <h1>6. Timing Measurement Fidelity Under System Noise</h1>
+        <p>Benchmark timing is vulnerable to environmental variance. CPU frequency scaling, thermal throttling, scheduler jitter, NUMA placement, page faults, and filesystem effects all perturb measurements. If unmodeled, these perturbations become part of the candidate’s optimization landscape. A protocol that rewards unstable lucky runs is not measuring performance faithfully.</p>
+        <h2>6.1 Clock discipline</h2>
+        <p>The protocol should use a monotonic high-resolution clock with documented semantics. CPU affinity should pin scoring runs to declared cores, and host power governors should be fixed when possible. Any uncontrolled variation should be stated explicitly in the benchmark report rather than silently ignored.</p>
+        <h2>6.2 Replication and calibration</h2>
+        <p>Single-shot timings are almost never sufficient in adversarial settings. The protocol should run repeated trials under randomized instance order. Harness overhead should be measured separately, for example through null submissions or calibrated no-op baselines, and either reported independently or normalized according to a published rule. Warm-up policy must also be explicit: whether cache priming, JIT compilation, or model loading occurs before timed execution must be fixed in advance.</p>
+        <h2>6.3 Distributional reporting</h2>
+        <p>Timing summaries should describe a distribution, not merely a point estimate. Median runtime, upper percentiles, and confidence intervals or bootstrap bands for the median are typically more informative than an arithmetic mean alone. Tail behavior matters because many real systems incur operational cost at high latency percentiles, and because side effects of contention and instability often appear in the tail first.</p>
+        <table>
+            <thead>
+                <tr><th>Noise source</th><th>Observed symptom</th><th>Protocol mitigation</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Scheduler jitter</td><td>High inter-trial variance</td><td>CPU pinning, host isolation, replication</td></tr>
+                <tr><td>Thermal drift</td><td>Progressive slowdown</td><td>Thermal stabilization and bounded session length</td></tr>
+                <tr><td>Cache effects</td><td>Order-dependent speedups</td><td>Fresh sandboxes or fixed warm-cache policy</td></tr>
+                <tr><td>Harness overhead</td><td>Inflated runtimes on small tasks</td><td>Calibration and explicit accounting</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h1>7. Statistical Aggregation Methods</h1>
+        <h2>7.1 Median versus mean</h2>
+        <p>Aggregation is itself a policy choice with strategic consequences. Under heavy-tailed runtime distributions the arithmetic mean is unstable and highly sensitive to rare extreme values. A candidate can sometimes exploit this by adopting brittle strategies that occasionally produce dramatic wins while often underperforming. The median is more robust and usually better aligned with typical execution. For this reason median runtime should generally be the primary central-tendency statistic in adversarial benchmarks.</p>
+        <h2>7.2 Percentiles and tail reporting</h2>
+        <p>The median alone is insufficient because it hides catastrophic tail behavior. Competitive benchmarks should therefore report percentile summaries such as P90 and P99 on valid runs, provided sample sizes support stable estimation. Tail reporting discourages strategies that are impressive only in their best cases and reveals whether a candidate’s performance claim depends on suppressing rare but consequential failures.</p>
+        <h2>7.3 Recommended bundle</h2>
+        <pre><code>For each certified submission report:
+- valid_instance_rate
+- median_runtime_valid
+- p90_runtime_valid
+- p99_runtime_valid (when supported)
+- confidence interval for median or bootstrap band
+- trial count and manifest hash</code></pre>
+        <table>
+            <thead>
+                <tr><th>Estimator</th><th>Outlier robustness</th><th>Interpretive value</th><th>Role</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Mean</td><td>Low</td><td>Useful for symmetric noise</td><td>Supplemental only</td></tr>
+                <tr><td>Median</td><td>High</td><td>Represents typical run</td><td>Primary statistic</td></tr>
+                <tr><td>Trimmed mean</td><td>Moderate</td><td>Useful robustness check</td><td>Optional secondary</td></tr>
+                <tr><td>P90/P99</td><td>Captures tails</td><td>Reveals instability</td><td>Required for latency claims</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h1>8. Reproducibility Requirements</h1>
+        <p>Reproducibility is often reduced to publishing source code, but for scoring protocols that is far from sufficient. A score can be replayed only if the candidate artifact digest, harness version, verifier version, generator policy, environment manifest, clock configuration, quota settings, and aggregation script version are all preserved. Missing any one of these may render a rerun observationally different even when the candidate code is unchanged.</p>
+        <h2>8.1 Provenance bundle</h2>
+        <p>Every certification event should therefore emit a provenance bundle containing artifact hashes, host and container manifests, protocol version, run schedule, raw structured records, verifier digests, and aggregation outputs. The public report may expose only a subset of these fields, but the operator must retain the whole bundle to support audit and longitudinal recertification.</p>
+        <h2>8.2 Replay semantics</h2>
+        <p>Perfect bitwise determinism is not always realistic for performance metrics on shared hardware. The right standard is replay equivalence: correctness verdicts must match exactly, and timing summaries must remain within a predeclared tolerance under the same manifest. The tolerance itself is part of the protocol and should be published. Without explicit replay semantics, reproducibility claims are impossible to evaluate.</p>
+    </section>
+
+    <section>
+        <h1>9. Defense Against Timing Side-Channels</h1>
+        <p>Hidden competitive benchmarks create a subtle risk: timing can reveal secret information even when answers are not exposed. If verifier behavior depends on hidden witness structure, or if the protocol publishes scores too incrementally, participants may infer hidden-set properties from latency, timeout type, or score movement after small code changes. Side-channel resistance is therefore a benchmark requirement, not merely a cryptographic curiosity.</p>
+        <h2>9.1 Leakage vectors</h2>
+        <p>Leakage can arise from secret-dependent canonicalization cost, branchy verifier logic, variable parsing paths, adaptive batching, or differing cleanup behavior for near-correct versus malformed submissions. Even aggregated timing can leak if publication cadence is too fine-grained and participants can correlate updates with targeted experimental changes.</p>
+        <h2>9.2 Defensive measures</h2>
+        <p>Useful countermeasures include secret-independent protocol structure up to the final accept/reject decision, randomized evaluation order, delayed publication, aggregate-only reporting, and coarsening of observable failure classes on hidden splits. Operators should also review verifier code for data-dependent behavior that is unnecessary for soundness. Perfect constant-time behavior may be infeasible in benchmark systems, but bounded leakage is achievable.</p>
+    </section>
+
+    <section>
+        <h1>10. Protocol Specification with Formal Properties</h1>
+        <pre><code>Protocol Certify(a, X_hid, W_hid, policy)
+1: validate artifact digest and declared interface
+2: for each instance x in randomized(X_hid):
+3:     env <- Init(policy.manifest, policy.quotas)
+4:     (status, y, trace) <- Exec(env, a, x)
+5:     if status = completed then verdict <- Verify(x, y, W_hid[x])
+6:     else verdict <- invalid
+7:     metric <- Measure(trace, status, verdict)
+8:     persist sealed run record
+9:     destroy env
+10: R <- Aggregate(valid metrics, verdicts, policy.aggregator)
+11: A <- Audit(R, run records, policy manifest hashes)
+12: publish policy-approved summary of (R, A)</code></pre>
+        <p>The protocol should satisfy the following properties.</p>
+        <ul>
+            <li><strong>P1: Isolation.</strong> Each scoring run executes in a fresh domain whose destruction prevents cross-run influence.</li>
+            <li><strong>P2: Verification soundness.</strong> A valid verdict implies satisfaction of the correctness relation except with negligible failure probability.</li>
+            <li><strong>P3: Metric admissibility.</strong> Only valid runs contribute to certified performance metrics.</li>
+            <li><strong>P4: Replay equivalence.</strong> Re-execution under the same manifest reproduces validity outcomes and timing summaries within declared tolerance.</li>
+            <li><strong>P5: Bounded leakage.</strong> The public transcript reveals no item-level hidden witness information beyond policy-approved aggregates.</li>
+        </ul>
+        <p>These properties make the scoring protocol a modular component of benchmark architecture. They can be evaluated, improved, and audited independently of changes to task content.</p>
+    </section>
+
+    <section>
+        <h1>11. Implications for FableBreaker-Style Benchmarks</h1>
+        <p>FableBreaker-style benchmarks need correctness and performance to coexist without contaminating one another. The protocol architecture described here enables that outcome. Candidate transforms run in isolated environments, correctness is established by canonicalized hash verification against hidden witnesses, timing is measured with explicit noise controls, and reporting is limited to robust aggregates over verifier-approved runs. Because the benchmark’s content layer is generator-based, hidden certification sets can rotate while preserving protocol comparability. This is precisely the kind of systems discipline required to keep benchmark claims trustworthy over time.</p>
+    </section>
+
+    <section>
+        <h1>12. Conclusion</h1>
+        <p>The integrity of a benchmark depends not only on its tasks but on the protocol that turns candidate behavior into scores. Under adversarial candidate submission, scoring must be treated as a formal, auditable, security-sensitive process. Strong isolation, typed resource policy, hash-based correctness verification, noise-aware timing methodology, robust aggregation, reproducible provenance, and side-channel-conscious publication policies together create a protocol whose outputs can support meaningful scientific claims. Benchmarks that ignore these concerns will continue to reward harness-aware optimization. Benchmarks that embrace them will do a better job of measuring actual capability.</p>
+    </section>
+
+    <section class="references">
+        <h1>References</h1>
+        <ol>
+            <li>Kocher, P. C. (1996). Timing attacks on implementations of Diffie-Hellman, RSA, DSS, and other systems. <em>CRYPTO</em>.</li>
+            <li>Georges, A., Buytaert, D., &amp; Eeckhout, L. (2007). Statistically rigorous Java performance evaluation. <em>OOPSLA</em>.</li>
+            <li>Mytkowicz, T., Diwan, A., Hauswirth, M., &amp; Sweeney, P. F. (2009). Producing wrong data without doing anything obviously wrong. <em>ASPLOS</em>.</li>
+            <li>Dean, J., &amp; Barroso, L. A. (2013). The tail at scale. <em>Communications of the ACM</em>.</li>
+            <li>Mattson, P., et al. (2020). MLPerf inference benchmark. <em>Proceedings of Machine Learning and Systems</em>.</li>
+            <li>Liang, P., et al. (2022). Holistic evaluation of language models. <em>TMLR</em>.</li>
+            <li>Kiela, D., et al. (2021). Dynabench: Rethinking benchmarking in NLP. <em>NAACL</em>.</li>
+            <li>Carlini, N., et al. (2023). Quantifying memorization across neural language models. <em>ICLR</em>.</li>
+            <li>Freddy Medina &amp; ItsNotAI LABS Research Division (2026). FableBreaker scoring protocol specification.</li>
+        </ol>
+    </section>
+</article>
+</body>
+</html>

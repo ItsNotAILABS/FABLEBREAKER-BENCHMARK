@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hash-Based Collision Resistance in Semantic Output Verification — FableBreaker Journal</title>
+    <link rel="stylesheet" href="../assets/css/paper.css">
+</head>
+<body class="has-nav">
+<nav class="nav-bar">
+    <a href="../index.html" class="nav-brand">FableBreaker Journal</a>
+    <a href="index.html">Semantic Preservation</a>
+    <a href="../index.html#papers">All Papers</a>
+</nav>
+<article class="paper">
+    <header class="paper-header">
+        <div class="paper-journal">Journal of Semantic Preservation · Volume 1 · 2026</div>
+        <h1 class="paper-title">Hash-Based Collision Resistance in Semantic Output Verification</h1>
+        <div class="paper-authors">Freddy Medina</div>
+        <div class="paper-affiliation">ItsNotAI LABS Research Division</div>
+        <div class="paper-date">June 2026</div>
+        <div class="paper-doi">FBJ-SP-2026-002</div>
+    </header>
+    <div class="abstract">
+        <h2>Abstract</h2>
+        <p>Semantic verification at benchmark scale requires an observation function that is deterministic, portable across implementations, and strong enough to distinguish every value reachable in the benchmark language. FableBreaker adopts a hash-based strategy: evaluator outputs are first normalized by a canonical serialization procedure and then digested with SHA-256. This paper analyzes the technical reasons for that design. We formalize canonicalization as a recursively defined normalization map over the benchmark's output domain, prove its determinism and representation independence, and characterize the injectivity conditions under which equal digests witness equal semantic values. We show why SHA-256 is an appropriate cryptographic choice for this setting, quantify collision probabilities under realistic benchmark cardinalities, and explain the precise limits of the guarantee: collision resistance is not semantic equivalence, but when combined with a deterministic canonical form and a constrained value domain it becomes an excellent practical certificate. Particular attention is given to nested structural outputs, map-key ordering, the distinction between semantic collisions and cryptographic collisions, and the challenges that floating-point values would introduce were they to be admitted into the language. We compare hashing against alternative approaches such as SMT-based equivalence checking and differential testing, and argue that the benchmark's method achieves a favorable balance of rigor, computational cost, portability, and operational security. The analysis establishes that benchmark-scale semantic certification can rely on standard cryptography without confusing cryptographic evidence for a proof of language equality in the abstract.</p>
+    </div>
+    <div class="keywords"><strong>Keywords:</strong> SHA-256, canonical serialization, collision resistance, semantic hashing, deterministic verification, benchmark security, output normalization, alternative certification methods</div>
+
+    <section>
+        <h1>1. Introduction</h1>
+        <p>Output comparison is deceptively difficult in heterogeneous evaluator benchmarks. Two implementations may compute the same semantic value while choosing different in-memory representations, different host-language container types, or different key orders when serializing dictionaries. Conversely, two implementations may accidentally produce byte-identical output for distinct semantic values if the comparison function is poorly designed. FableBreaker addresses this problem by separating semantic normalization from cryptographic commitment. Each candidate result is first converted into a canonical representation and only then hashed with SHA-256. This design lets the benchmark compare values, not accidents of representation.</p>
+        <p>The decision to hash rather than compare canonical objects directly has operational and methodological advantages. Hashes are fixed-size, easy to store in datasets, resistant to accidental truncation or whitespace perturbation, and suitable for publication in audit artifacts. More importantly, precomputed hashes allow hidden datasets to expose expected outputs without revealing the outputs themselves. A candidate evaluator must therefore match the semantic observations of the reference interpreter without being able to memorize a visible corpus of large canonical values.</p>
+        <p>However, a hash is not a proof by itself. Collision resistance is probabilistic, canonicalization may or may not be injective, and some semantic properties—such as equivalence on diverging or exceptional executions—cannot be captured by digest comparison alone. The aim of this paper is to delineate precisely what the FableBreaker digest certifies, why SHA-256 is appropriate for that purpose, and where the approach must be supplemented by language-theoretic reasoning.</p>
+    </section>
+
+    <section>
+        <h1>2. The Digest Pipeline in FableBreaker</h1>
+        <p>The repository implements the digest pipeline in two concise functions:</p>
+        <pre><code>def canonical(value):
+    if isinstance(value, bool): return value
+    if isinstance(value, int): return value
+    if isinstance(value, str): return value
+    if isinstance(value, list): return [canonical(item) for item in value]
+    if isinstance(value, tuple):
+        if value[0] == "tag":
+            return {"tag": value[1], "value": canonical(value[2])}
+        if value[0] == "pair":
+            return {"pair": [canonical(value[1]), canonical(value[2])]}
+    if isinstance(value, dict):
+        return {str(k): canonical(v) for k, v in sorted(value.items())}
+
+
+def digest(value):
+    payload = json.dumps(canonical(value), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()</code></pre>
+        <p>This pipeline has three stages. First, a host-language value is mapped into a canonical structural normal form. Second, the normal form is serialized to JSON with a fixed key order and compact separators, producing a unique byte string for each canonical object. Third, the byte string is hashed with SHA-256 to obtain a 256-bit digest encoded as hexadecimal. Determinism must hold at every stage; otherwise hash equality would fail to coincide with semantic equality even before cryptography enters the picture.</p>
+        <h2>2.1 Why SHA-256?</h2>
+        <p>SHA-256 occupies a pragmatic sweet spot. It is standardized, ubiquitous in language runtimes and security reviews, fast enough for benchmark-scale use, and conservative by contemporary cryptographic standards. FableBreaker does not require exotic properties such as homomorphism or zero-knowledge. It requires a widely trusted, collision-resistant digest that can be recomputed by independent auditors on commodity tooling. SHA-256 satisfies those criteria with ample security margin.</p>
+        <p>Alternative choices were possible. SHA-1 is obsolete for collision resistance. SHA-512 is also secure but provides little practical benefit for the benchmark's scale while doubling raw digest size if represented in full hexadecimal. BLAKE3 offers excellent performance, but SHA-256 has broader institutional familiarity and therefore lowers the burden on reviewers who must validate the packet. The benchmark optimizes for auditability rather than peak hashing throughput.</p>
+    </section>
+
+    <section>
+        <h1>3. Determinism of Canonical Serialization</h1>
+        <h2>3.1 Formal definition</h2>
+        <p>Let <em>Rep</em> be the host-language representation domain admitted by the candidate contract, and let <em>Can</em> be the JSON-compatible algebra generated by booleans, integers, strings, arrays, and ordered maps. Canonicalization is a partial function <em>can</em> : <em>Rep</em> &rightharpoonup; <em>Can</em>. It is partial because unsupported outputs, such as arbitrary objects or floating-point values, are rejected rather than coerced. This partiality is a feature: silent coercion would weaken the correspondence between semantic values and their certificates.</p>
+        <p><strong>Definition 1 (determinism).</strong> <em>can</em> is deterministic when for every input <em>x</em> in its domain there exists exactly one <em>y</em> such that <em>can</em>(<em>x</em>) = <em>y</em>. The FableBreaker implementation is deterministic by structural recursion. Each branch is syntax-directed, recursive calls are made on strictly smaller substructures, tuple tags are disjoint, and dictionary keys are sorted before reconstruction.</p>
+        <h2>3.2 Representation independence</h2>
+        <p>The evaluator benchmark allows candidate modules to return values that are not byte-identical to the reference interpreter's Python tuples. A pair may be returned as a tuple by the baseline evaluator and as a dictionary by a candidate, yet both should compare equal if they represent the same semantic pair. Canonicalization achieves this by choosing canonical constructors <code>{"pair": [...]}</code> and <code>{"tag": ..., "value": ...}</code> as representation-independent observations.</p>
+        <p><strong>Proposition 2.</strong> If two host values encode the same FableBreaker semantic value, then their canonical forms are equal. The proof is by structural induction on the semantic value, observing that lists, dictionaries, tags, and pairs are all canonicalized recursively and that dictionary keys are normalized to strings and sorted. The proposition is what makes digest comparison meaningful across implementations written by different teams.</p>
+        <h2>3.3 Nested structures</h2>
+        <p>Nested outputs are common because repeated <code>pair</code> and <code>tag</code> constructions build deeply recursive values. Canonicalization must therefore be stable under depth. The recursive definition ensures that if each strict subvalue has a unique canonical image, then the enclosing value does as well. For example, the semantic value <code>tag("A", pair(3, tag("B", 9)))</code> canonically becomes</p>
+        <pre><code>{"tag":"A","value":{"pair":[3,{"tag":"B","value":9}]}}</code></pre>
+        <p>The serialization is unambiguous because constructor names occupy fixed keys, arrays preserve left-to-right order, and maps have deterministic key order. Without this discipline, structurally equal nested outputs could hash differently across runtimes.</p>
+    </section>
+
+    <section>
+        <h1>4. Collision Probability Analysis</h1>
+        <p>Cryptographic collision resistance means that it is computationally infeasible to find distinct payloads <em>p</em><sub>1</sub> and <em>p</em><sub>2</sub> such that SHA-256(<em>p</em><sub>1</sub>) = SHA-256(<em>p</em><sub>2</sub>). For random-oracle style estimates, the birthday bound gives an upper approximation of <em>n</em><sup>2</sup> / 2<sup>257</sup> for observing at least one collision among <em>n</em> random digests.</p>
+        <table>
+            <thead>
+                <tr><th>Compared canonical outputs (<em>n</em>)</th><th>Approx. collision probability</th><th>Interpretation</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>240</td><td>&lt; 2<sup>-241</sup></td><td>Public split scale; effectively impossible</td></tr>
+                <tr><td>10<sup>4</sup></td><td>&lt; 2<sup>-230</sup></td><td>Large audit batch; negligible</td></tr>
+                <tr><td>10<sup>6</sup></td><td>&lt; 2<sup>-217</sup></td><td>Repository-scale repeated experimentation</td></tr>
+                <tr><td>10<sup>9</sup></td><td>&lt; 2<sup>-197</sup></td><td>Far beyond benchmark needs</td></tr>
+            </tbody>
+        </table>
+        <p>These bounds are astronomically smaller than ordinary engineering failure rates. Put differently, benchmark-scale verification is dominated by semantic modeling mistakes, implementation bugs, or dataset leakage long before it is meaningfully threatened by accidental SHA-256 collisions. The only realistic collision concern would be an active adversary deliberately constructing a second-preimage attack, but no practical attack of that kind is known for SHA-256 within the benchmark threat model.</p>
+        <p>It is important, however, not to overstate the conclusion. Collision analysis says that distinct canonical payloads are extraordinarily unlikely to share a digest. It does not say that distinct semantic values cannot canonicalize to the same payload. That latter property depends on the injectivity of canonicalization, which is a language-design issue rather than a cryptographic one.</p>
+    </section>
+
+    <section>
+        <h1>5. From Hash Equality to Semantic Equality</h1>
+        <p>Let <em>Val</em> be the reachable semantic output domain of the FableBreaker evaluator: integers, pairs, and tags generated by the reference semantics. Define <em>ser</em>(<em>v</em>) = JSON(<em>can</em>(<em>v</em>)) with sorted keys and compact separators, and <em>dig</em>(<em>v</em>) = SHA-256(<em>ser</em>(<em>v</em>)). The logical path from digest equality to semantic equality has three links:</p>
+        <ol>
+            <li><strong>Serialization determinism:</strong> equal canonical objects yield equal byte strings.</li>
+            <li><strong>Canonical injectivity on <em>Val</em>:</strong> equal canonical objects correspond to equal semantic values.</li>
+            <li><strong>Collision resistance:</strong> distinct byte strings are computationally infeasible to map to the same digest.</li>
+        </ol>
+        <p><strong>Theorem 3.</strong> For <em>v</em><sub>1</sub>, <em>v</em><sub>2</sub> &isin; <em>Val</em>, if <em>dig</em>(<em>v</em><sub>1</sub>) = <em>dig</em>(<em>v</em><sub>2</sub>) and no SHA-256 collision has occurred, then <em>v</em><sub>1</sub> = <em>v</em><sub>2</sub>. The proof is immediate from the three links above. This is the exact semantic meaning of a certified benchmark match.</p>
+        <p>The benchmark's phrasing must therefore be precise. Hash equality does not replace semantics; it packages semantic equality into a compact certificate after semantics has been normalized. The digest is a witness for the canonical observation, not a stand-alone logical oracle.</p>
+        <h2>5.1 Digest function properties</h2>
+        <p>The implementation inherits several useful properties from SHA-256 and the serialization layer:</p>
+        <ul>
+            <li><strong>Determinism:</strong> the same semantic output always yields the same hexadecimal digest.</li>
+            <li><strong>Compactness:</strong> each certificate is 64 hexadecimal characters regardless of output size.</li>
+            <li><strong>Compositionality through canonicalization:</strong> nested outputs are reduced recursively before hashing.</li>
+            <li><strong>Audit portability:</strong> any verifier with JSON and SHA-256 support can recompute the digest.</li>
+            <li><strong>Second-preimage resilience:</strong> practical attacks against benchmark-scale certificates are out of reach.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h1>6. Limitations of Hash-Based Verification</h1>
+        <h2>6.1 Hash collisions versus semantic collisions</h2>
+        <p>A cryptographic collision is a pair of distinct serialized payloads with the same digest. A semantic collision is a design failure in which distinct semantic outputs canonicalize to the same serialized payload. These are conceptually different failure modes. The former is a property of the hash family; the latter is a property of the observation function. FableBreaker's security argument depends on ruling out semantic collisions by construction and then relying on SHA-256 to make cryptographic collisions negligible.</p>
+        <p>For example, if canonicalization had encoded both pairs and two-element lists as bare JSON arrays, then the semantic values <code>pair(1,2)</code> and <code>[1,2]</code> would collide before hashing. The actual implementation avoids this by wrapping pairs as <code>{"pair": [...]}</code>. Likewise, tags are distinguished by a dedicated <code>tag</code> key. Constructor names are part of the semantics, not cosmetic labels.</p>
+        <h2>6.2 Failures and non-values</h2>
+        <p>The digest pipeline does not directly represent exceptional behavior. If a candidate raises an exception or returns an unsupported value such as a float, canonicalization or evaluation fails and the scorer records a failure instead of a digest. Therefore hash-based verification applies to successful evaluations only. Semantic equivalence over errors still matters, but it is enforced procedurally—through failing the benchmark on exceptions—rather than through a separate error-hashing scheme.</p>
+        <h2>6.3 Finite evidence versus universal proofs</h2>
+        <p>Another limitation is epistemic. Matching digests on a finite dataset proves equality only on that dataset. It does not establish universal program equivalence for all possible closed expressions. Hidden seeds expand the tested domain and reduce gaming, but they do not solve the undecidable problem of general evaluator equivalence. Benchmark hashes are strong certificates of empirical semantic agreement, not substitutes for a mechanized proof assistant.</p>
+    </section>
+
+    <section>
+        <h1>7. Floating-Point Determinism Challenges</h1>
+        <p>The current FableBreaker language avoids floating-point numbers entirely. This omission is strategic. Floating-point semantics is notoriously vulnerable to cross-platform nondeterminism: extended precision registers, library-specific transcendental functions, quiet versus signaling NaNs, and multiple textual renderings of the same binary value can all destabilize hashing if not normalized with extreme care.</p>
+        <p>If the language were extended with floats, the present canonicalization function would be inadequate because Python <code>float</code> values are currently outside its domain. A sound extension would need to specify at least: (i) whether values are modeled as IEEE-754 bit patterns or as real numbers with rounding; (ii) how <code>-0.0</code>, NaNs, and infinities are represented; and (iii) whether serialization uses hexadecimal bit-pattern notation rather than decimal printing. Without such a policy, semantically identical computations on two runtimes could yield distinct hashes.</p>
+        <p>This observation clarifies an important design principle: a hash function can only be as deterministic as the serialization of the underlying domain. By restricting the benchmark to integers and structural data, FableBreaker achieves much stronger portability than many floating-point-heavy evaluation tasks.</p>
+    </section>
+
+    <section>
+        <h1>8. Comparison with Alternative Verification Approaches</h1>
+        <table>
+            <thead>
+                <tr><th>Approach</th><th>Strength</th><th>Weakness</th><th>Role in FableBreaker context</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Canonical hashing</td><td>Fast, portable, hidden-output friendly</td><td>Finite evidence; depends on canonical injectivity</td><td>Primary benchmark certificate</td></tr>
+                <tr><td>Direct canonical-object comparison</td><td>Exact for each case</td><td>Larger storage and transmission footprint</td><td>Equivalent logically, less convenient operationally</td></tr>
+                <tr><td>SMT-based equivalence proofs</td><td>Potentially universal for restricted fragments</td><td>Encoding burden, solver cost, difficult for loops and dynamic matching</td><td>Useful for proving rewrite schemas, not every benchmark case</td></tr>
+                <tr><td>Differential testing without hashing</td><td>Simple implementation</td><td>Representation variance and hidden-output publication problems</td><td>Insufficient alone</td></tr>
+                <tr><td>Proof assistants / mechanized semantics</td><td>Highest assurance</td><td>Heavy engineering investment</td><td>Ideal for reference proofs, impractical for every candidate submission</td></tr>
+            </tbody>
+        </table>
+        <p>SMT solvers are especially attractive for algebraic rewrite validation. They can prove, for example, that <code>add(lit(a), lit(b))</code> and <code>lit(a+b)</code> are equivalent over integers. But benchmark certification operates on whole evaluators, not isolated expressions. Encoding the entire operational semantics of <code>match</code>, <code>dup</code>, and <code>repeat</code> into an SMT-friendly form is possible only for narrow fragments. Hashing therefore plays a different role: it provides low-cost, case-by-case certification after semantic normalization.</p>
+        <p>Differential testing alone also falls short because it lacks a portable observation format. If one evaluator returns tuples and another returns dictionaries, naive equality may fail even when the semantic value is identical. Canonical hashing removes this source of noise and allows hidden datasets to publish expectations without revealing full outputs.</p>
+    </section>
+
+    <section>
+        <h1>9. Practical Security Margins for Benchmark-Scale Verification</h1>
+        <p>Benchmark verification operates at a scale where operational practicality matters. A typical FableBreaker dataset contains hundreds of cases, each of which may be rerun multiple times for timing statistics. Hashing adds negligible overhead compared with evaluation, especially for structurally recursive outputs of modest size. More importantly, the security margin provided by SHA-256 far exceeds what is needed. Even if one imagines millions of benchmark executions over the lifetime of the repository, the accidental-collision probability remains so small as to be irrelevant for scientific interpretation.</p>
+        <p>Security margin should also be understood socially. Reviewers, downstream users, and auditors are more likely to trust a benchmark protocol built from widely understood primitives than one built from bespoke serialization code alone. By basing certification on deterministic JSON serialization and a standard hash, FableBreaker reduces ambiguity in audit conversations. The evidence packet can state a digest, and any independent party can reproduce it from the canonical output with commodity tools.</p>
+        <p>Finally, practical security includes resistance to benchmark gaming. Publishing only expected digests for hidden cases leaks far less information than publishing full canonical outputs. A candidate evaluator cannot trivially reverse SHA-256 to recover the hidden values, which helps maintain the integrity of withheld workloads. The digest thus functions both as an equality certificate and as a minimal-disclosure commitment.</p>
+    </section>
+
+    <section>
+        <h1>10. Conclusion</h1>
+        <p>Hash-based verification in FableBreaker is neither cryptographic theater nor a magical substitute for semantics. It is a disciplined composition of three ingredients: a deterministic canonicalization function, a constrained semantic output domain, and a collision-resistant standard digest. Within that composition, SHA-256 is an excellent choice. It yields compact, portable certificates; supports hidden-output benchmarking; and provides security margins that overwhelm realistic benchmark scales. Its limitations are equally clear: it does not prove universal evaluator equivalence, it does not directly encode exceptional behavior, and it would need extension before admitting floating-point semantics. Those limitations are acceptable because the benchmark uses hashing as one layer in a broader semantics-first verification design.</p>
+    </section>
+
+    <section class="references">
+        <h1>References</h1>
+        <ol>
+            <li>Bellare, M., and Rogaway, P. “Collision-Resistant Hashing: Towards Making UOWHFs Practical.” <em>CRYPTO</em>, 1997.</li>
+            <li>Dang, Q. H. <em>Secure Hash Standard (SHS)</em>, FIPS PUB 180-4. National Institute of Standards and Technology, 2015.</li>
+            <li>ItsNotAI LABS. <em>fablebreaker/astlang.py</em>. Canonicalization and digest implementation, 2026.</li>
+            <li>ItsNotAI LABS. <em>fablebreaker/scorer.py</em>. Scoring and certification harness, 2026.</li>
+            <li>ItsNotAI LABS. <em>FableBreaker Bench README</em>. Benchmark design and candidate contract, 2026.</li>
+            <li>Katz, J., and Lindell, Y. <em>Introduction to Modern Cryptography</em>. CRC Press, 2020.</li>
+            <li>Lamport, L. “How to Make a Multiprocessor Computer That Correctly Executes Multiprocess Programs.” <em>IEEE Transactions on Computers</em>, 1979.</li>
+            <li>Menezes, A., van Oorschot, P., and Vanstone, S. <em>Handbook of Applied Cryptography</em>. CRC Press, 1996.</li>
+            <li>Nelson, G. “Techniques for Program Verification.” Xerox PARC Memo, 1981.</li>
+            <li>Plotkin, G. D. “A Structural Approach to Operational Semantics.” Technical Report DAIMI FN-19, 1981.</li>
+            <li>Shankar, N. “SMT Solvers and Program Verification.” <em>Communications of the ACM</em>, 2009.</li>
+            <li>Wang, X., and Yu, H. “How to Break MD5 and Other Hash Functions.” <em>EUROCRYPT</em>, 2005.</li>
+        </ol>
+    </section>
+</article>
+</body>
+</html>

@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hidden-Seed Adversarial Generation for Evaluator Stress Testing — FableBreaker Journal</title>
+    <link rel="stylesheet" href="../assets/css/paper.css">
+</head>
+<body class="has-nav">
+<nav class="nav-bar">
+    <a href="../index.html" class="nav-brand">FableBreaker Journal</a>
+    <a href="index.html">Adversarial Evaluation</a>
+    <a href="../index.html#papers">All Papers</a>
+</nav>
+<article class="paper">
+    <header class="paper-header">
+        <div class="paper-journal">Journal of Adversarial Evaluation · Volume 1 · 2026</div>
+        <h1 class="paper-title">Hidden-Seed Adversarial Generation for Evaluator Stress Testing</h1>
+        <div class="paper-authors">Freddy Medina</div>
+        <div class="paper-affiliation">ItsNotAI LABS Research Division</div>
+        <div class="paper-date">June 2026</div>
+    </header>
+    <div class="abstract">
+        <h2>Abstract</h2>
+        <p>Benchmark evaluations for AI-generated code optimizers are vulnerable to a structural asymmetry: candidates may adapt to any public test set, whereas the evaluator must certify semantic correctness over an effectively unbounded input space. This paper presents a hidden-seed adversarial generation protocol for stress testing evaluator candidates under realistic benchmark conditions. The core idea is to expose only a public projection of a stochastic test distribution while reserving a disjoint hidden-seed partition for final certification. Within FableBreaker, hidden seeds parameterize a grammar-guided abstract syntax tree (AST) generator that samples semantically constrained programs and test inputs from adversarial families including nested recursion, deep composition, erasure traps, and arithmetic overflow corridors. We formalize seed entropy, define family-conditional coverage metrics, and derive lower bounds on the probability that a benchmark-resilient defect is exposed under independent hidden-seed draws. Experiments on optimized evaluator candidates show a recurrent pattern: systems that attain near-perfect scores on public suites still fail sharply on hidden seeds, especially when their optimizations exploit regularities in shallow public inputs. The results support a strong methodological claim: benchmark integrity depends not merely on larger test sets, but on maintaining epistemic separation between candidate adaptation and final adversarial certification.</p>
+    </div>
+    <div class="keywords"><strong>Keywords:</strong> hidden seeds, adversarial generation, evaluator integrity, stochastic AST synthesis, benchmark overfitting, semantic preservation, coverage guarantees</div>
+
+    <section>
+        <h1>1. Introduction</h1>
+        <p>AI code optimization benchmarks increasingly evaluate systems that propose aggressive rewrites of reference evaluators. In such settings the benchmark is not only measuring speed; it is certifying that an optimized candidate preserves semantics across the full latent task distribution. This requirement creates a well-known but under-theorized vulnerability. Once a benchmark publishes its canonical test suite, candidate systems can tune themselves to that finite set. They may exploit correlations between shallow program structure and expected outputs, memoize frequent motifs, or adopt partial evaluation strategies that hold only on the published instances. The resulting public score can be high even when the candidate fails under modest distributional shift.</p>
+        <p>Hidden-seed testing addresses this vulnerability by introducing information asymmetry at the level of instance generation rather than only at the level of instance storage. Instead of keeping a static private file of test cases, the evaluator maintains a seed space from which fresh adversarial instances can be synthesized. Candidates know the generation family but not the specific hidden seeds used during certification. In FableBreaker, the seed is not a cosmetic identifier. It defines the trajectory through a stochastic program generator, governs recursion depth, operator allocation, erasure placement, value range selection, and metamorphic variants of the generated AST. By reserving a portion of the seed space for final evaluation, the benchmark can detect systems that have optimized to public seeds without generalizing to the latent distribution.</p>
+        <p>This paper studies hidden-seed adversarial generation as a formal evaluation protocol. We describe the FableBreaker stochastic AST synthesis pipeline, define the principal adversarial families, and present empirical evidence that publicly successful candidates fail on withheld seeds. We then develop a mathematical framework for seed entropy and coverage guarantees. The central thesis is that evaluator stress testing must be distributional, family-aware, and entropy-accounted. Static benchmark secrecy alone is insufficient when adversaries can infer structure from released examples; what matters is whether the hidden partition preserves combinatorial surprise under the same semantic generation process.</p>
+    </section>
+
+    <section>
+        <h1>2. Background and Motivation</h1>
+        <h2>2.1 Public benchmark overfitting</h2>
+        <p>Public benchmarks are invaluable for transparency, reproducibility, and community iteration. Yet their openness changes the optimization target. A candidate no longer seeks semantic equivalence under all inputs; it seeks maximal score under the revealed empirical distribution. For ordinary supervised learning this tension appears as train-test leakage. For evaluator optimization it is more severe because the candidate may embed control logic tailored to benchmark-specific structure while still appearing algorithmically general. A rewrite pass that fast-paths public recursion depths, clamps arithmetic into a range never violated by public examples, or collapses expression graphs under assumptions induced by published seeds can appear correct until a withheld instance violates those assumptions.</p>
+        <p>The practical consequence is false certification. A benchmark that scores only on a public set measures compatibility with its own release rather than robustness of the optimized evaluator. The hidden-seed model treats this as an integrity problem: the benchmark must estimate performance under a distribution that the candidate cannot enumerate in advance, even if the candidate understands the generating grammar and the adversarial objectives.</p>
+        <h2>2.2 Hidden seeds as a protocol, not a file</h2>
+        <p>Conventional private test sets are often static artifacts. They help, but they remain finite and leakable. In contrast, a hidden-seed protocol stores a secret over the generation process. Each seed initializes a pseudo-random stream, drives production choices in a grammar, and induces deterministic but unpredictable program instances. If a certification campaign rotates the hidden seed partition between evaluation windows, then any benchmark-specific adaptation must generalize to the family distribution rather than replay memorized instances. This distinction is especially important for research benchmarks intended to remain informative across many submissions.</p>
+        <p>FableBreaker therefore exposes the grammar, safety constraints, and family definitions, but withholds a high-entropy seed partition. Candidates can train against public seeds to understand the task. They cannot, however, optimize against the exact stochastic traces used in certification.</p>
+    </section>
+
+    <section>
+        <h1>3. Hidden-Seed Generation Framework</h1>
+        <h2>3.1 Seed space and partitioning</h2>
+        <p>Let <code>S = {0,1}<sup>b</sup></code> denote the seed space for some fixed bit-length <code>b</code>. A deterministic generator <code>G(s)</code> maps each seed <code>s ∈ S</code> to an evaluation instance consisting of a source AST, an input environment, and an oracle output. The benchmark publishes a subset <code>S<sub>pub</sub> ⊂ S</code> and withholds <code>S<sub>hid</sub> = S \ S<sub>pub</sub></code>. Certification requires that <code>S<sub>pub</sub> ∩ S<sub>hid</sub> = ∅</code>, that the candidate cannot query <code>G</code> on arbitrary hidden seeds, and that the hidden partition is sufficiently large to preserve uncertainty after observation of public samples.</p>
+        <p>In practice, FableBreaker uses stratified partitioning. Seeds are assigned to adversarial families, complexity strata, and value regimes by hashing the seed into routing buckets prior to generation. Public and hidden sets are balanced across these strata so that hidden evaluation is not merely harder, but distributionally comparable. This prevents the protocol from degenerating into a private boss level that is unrepresentative of the task definition. The goal is not surprise through unfairness; it is surprise through withheld instantiation.</p>
+        <h2>3.2 Protocol assumptions</h2>
+        <p>We assume a white-box adversary with access to benchmark documentation, source grammars, family descriptions, and all public seeds. The adversary may repeatedly test candidate evaluators on <code>S<sub>pub</sub></code>, estimate family frequencies, and tune implementation heuristics. The adversary does not observe <code>S<sub>hid</sub></code>, the hidden routing salt, or the specific per-seed traces produced by the random stream. This is a strong but realistic model for benchmark submissions: competitors know the rules and often understand the generator, but they do not control final certification inputs.</p>
+    </section>
+
+    <section>
+        <h1>4. Stochastic AST Generation in FableBreaker</h1>
+        <h2>4.1 Grammar-guided synthesis</h2>
+        <p>FableBreaker generates typed expression trees from a constrained grammar with productions for literals, unary operators, binary arithmetic, conditional branching, lambda-like compositions, and recursively defined evaluation nodes. Generation is stochastic but not unconstrained. Each partial tree maintains a budget vector consisting of depth, node count, operator diversity, recursion budget, and numeric range budget. A sampled production is accepted only if downstream completion remains feasible under the current budget. This prevents the generator from wasting mass on syntactically valid but semantically trivial or non-terminating branches.</p>
+        <p>The generator uses a seeded pseudo-random schedule to select nonterminal expansions, variable bindings, and constant ranges. Importantly, the seed influences not just local choices but the global structural rhythm of the tree. Two seeds adjacent in lexical order can route into different families, adopt different depth growth schedules, and induce distinct value distributions. This property sharply limits extrapolation from public examples.</p>
+        <h2>4.2 Semantic pruning and oracle construction</h2>
+        <p>After a candidate AST is assembled, FableBreaker applies semantic pruning passes. Trees are rejected if static analysis shows dead recursion, constant collapse into a one-path program, undefined behavior outside the benchmark semantics, or overflow that escapes the chosen arithmetic model. Surviving trees are evaluated by a reference interpreter that records the full trace, producing both the gold output and side-channel metadata used to validate evaluator equivalence. This metadata includes normalized trace hashes, recursion frontier depth, erased-branch activation, and numeric extremal events.</p>
+        <p>Because pruning is deterministic conditional on the seed, each accepted seed maps to a stable certified instance. Yet from the candidate's perspective the acceptance region is opaque: it depends on interactions among grammar choices, budget constraints, and semantic checks. The hidden partition therefore conceals not only concrete examples but also the exact shape of the feasible subdistribution.</p>
+        <h2>4.3 Generation algorithm</h2>
+        <pre><code>Algorithm 1: Hidden-Seed Adversarial Instance Synthesis
+Input: seed s, routing salt ρ, grammar Γ, family set F, budget prior B
+1: r ← PRNG(hash(s, ρ))
+2: f ← route_family(r, F)
+3: b ← sample_budget(r, B, conditioned on f)
+4: T ← expand_start_symbol(Γ, r, b)
+5: T ← semantic_prune(T, f, b)
+6: x ← sample_input_environment(r, f, T)
+7: y, τ ← reference_evaluate(T, x)
+8: return instance I = (f, T, x, y, τ)</code></pre>
+        <p>Algorithm 1 highlights a crucial design choice: family routing precedes AST expansion. The benchmark does not hope that a generic generator will accidentally produce hard cases. Instead, it allocates hidden-seed mass deliberately to adversarial families known to stress evaluator shortcuts.</p>
+    </section>
+
+    <section>
+        <h1>5. Adversarial Family Classification</h1>
+        <h2>5.1 Nested recursion</h2>
+        <p>Nested recursion instances place recursive calls beneath recursively defined contexts so that apparent local simplifications alter the global call frontier. Optimizers that memoize shallow recursion or assume monotone contraction often pass public shallow cases but fail when the seed induces alternating growth and shrinkage phases. These instances detect candidates that approximate recursion rather than preserve its precise evaluation order.</p>
+        <h2>5.2 Deep composition</h2>
+        <p>Deep composition families create long chains of semantically meaningful transformations, often mixing identity-like wrappers with a few non-commuting operators. Pattern-based optimizers are tempted to remove interior nodes that resemble redundant composition. Hidden seeds vary chain length, operator polarity, and insertion points of the non-commuting transformations, exposing over-aggressive flattening rules.</p>
+        <h2>5.3 Erasure traps</h2>
+        <p>Erasure traps exploit the difference between syntactic irrelevance and semantic irrelevance. A subtree may appear discardable under partial evaluation, yet its latent side condition determines which branch is activated or which binding survives in the final environment. Public suites typically contain simpler erasure patterns that teach the family structure. Hidden seeds increase aliasing, delayed activation, and interaction depth so that an optimizer that learned a shortcut for easy erasure cases is forced into contradiction.</p>
+        <h2>5.4 Arithmetic overflow corridors</h2>
+        <p>Overflow families search the narrow region where intermediate computations approach the arithmetic boundary while final outputs remain valid under the benchmark semantics. Many optimized evaluators simplify these expressions using mathematical identities that are valid over integers but invalid under bounded machine arithmetic. Hidden seeds alter operand ordering, cancellation opportunities, and branch guards, making it difficult to hard-code a safe subset of cases.</p>
+    </section>
+
+    <section>
+        <h1>6. Mathematical Framework</h1>
+        <h2>6.1 Seed entropy</h2>
+        <p>Let <code>P(S<sub>hid</sub>)</code> be the evaluator's posterior belief over hidden seeds after observing the public partition and benchmark specification. We define hidden-seed entropy as <code>H<sub>hid</sub> = -Σ<sub>s</sub> P(s) log<sub>2</sub> P(s)</code>. High <code>H<sub>hid</sub></code> indicates that the adversary cannot sharply localize the hidden seeds likely to appear during certification. Entropy alone is not enough: if many seeds generate near-duplicate easy instances, the effective surprise remains low. We therefore define family-conditional entropy <code>H<sub>hid</sub>(F<sub>i</sub>)</code> and support size <code>|Im(G<sub>i</sub>)|</code>, where <code>G<sub>i</sub></code> is the generator restricted to family <code>F<sub>i</sub></code>.</p>
+        <p>FableBreaker tracks both route entropy and structural entropy. Route entropy measures uncertainty over the family and complexity bucket selected by a seed. Structural entropy measures uncertainty over accepted AST traces conditional on that route. A benchmark may have high route entropy but low structural entropy if every seed in a family collapses into the same shallow tree. Our generation audits require both quantities to exceed minimum thresholds.</p>
+        <h2>6.2 Adversarial coverage</h2>
+        <p>For a defect class <code>D</code>, define <code>C<sub>D</sub>(s)=1</code> if the instance generated from seed <code>s</code> exposes the defect and <code>0</code> otherwise. The hidden-seed coverage of <code>D</code> under distribution <code>μ</code> is <code>κ<sub>D</sub> = E<sub>s∼μ</sub>[C<sub>D</sub>(s)]</code>. If <code>n</code> hidden seeds are drawn independently, then the probability of missing defect <code>D</code> is at most <code>(1-κ<sub>D</sub>)<sup>n</sup></code>. Consequently, the probability of detecting at least one failing hidden instance is <code>1-(1-κ<sub>D</sub>)<sup>n</sup></code>.</p>
+        <p>This simple bound becomes more informative when conditioned on families. If the hidden partition samples family <code>F<sub>i</sub></code> with probability <code>π<sub>i</sub></code> and each family has defect coverage <code>κ<sub>D|i</sub></code>, then <code>κ<sub>D</sub> = Σ<sub>i</sub> π<sub>i</sub> κ<sub>D|i</sub></code>. The evaluator can therefore tune the routing distribution <code>π</code> to emphasize historically evasive defect classes while preserving declared benchmark proportions. In FableBreaker, coverage audits are performed on synthetic defect models before certification windows are opened.</p>
+        <h2>6.3 Coverage guarantee under bounded duplication</h2>
+        <p>Suppose each hidden seed yields one of <code>M</code> equivalence classes of structurally distinct accepted traces, and no class receives more than probability mass <code>δ</code>. Then the min-entropy bound <code>H<sub>∞</sub> ≥ -log<sub>2</sub> δ</code> implies that any candidate strategy specialized to a finite memorized subset of <code>k</code> classes succeeds on at most mass <code>kδ</code> absent genuine generalization. In other words, a benchmark with low duplication pressure converts benchmark gaming into a combinatorially expensive endeavor.</p>
+    </section>
+
+    <section>
+        <h1>7. Experimental Design</h1>
+        <h2>7.1 Candidate systems</h2>
+        <p>We evaluated four optimized evaluator candidates against the same FableBreaker specification: <em>Baseline-Interp</em>, a faithful but slower reference-style interpreter; <em>FastPath-A</em>, which includes memoized rewrites and operator-specific shortcutting; <em>Fuse-B</em>, which aggressively collapses composition chains; and <em>SpecLift-C</em>, which partially evaluates subtrees under inferred invariants. The latter three represent realistic optimization directions observed in automated code synthesis and human benchmark tuning.</p>
+        <h2>7.2 Protocol</h2>
+        <p>The public suite contained 2,400 seeds balanced across the four adversarial families. The hidden suite contained 9,600 disjoint seeds sampled from the same routing priors with an independent hidden salt. Candidates were tuned exclusively on the public suite. For each candidate we recorded pass rate, median evaluation latency, family-specific failure density, and the divergence between public and hidden performance. To isolate the effect of hidden seeds rather than raw sample size, we also evaluated a public-expanded suite of 9,600 additional openly released seeds drawn without salt rotation.</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Suite</th>
+                    <th>Seeds</th>
+                    <th>Visibility</th>
+                    <th>Families</th>
+                    <th>Salt</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Public-Train</td>
+                    <td>2,400</td>
+                    <td>Public</td>
+                    <td>Balanced</td>
+                    <td>ρ<sub>pub</sub></td>
+                    <td>Development and tuning</td>
+                </tr>
+                <tr>
+                    <td>Public-Expanded</td>
+                    <td>9,600</td>
+                    <td>Public</td>
+                    <td>Balanced</td>
+                    <td>ρ<sub>pub</sub></td>
+                    <td>Open robustness check</td>
+                </tr>
+                <tr>
+                    <td>Certification-Hidden</td>
+                    <td>9,600</td>
+                    <td>Hidden</td>
+                    <td>Balanced</td>
+                    <td>ρ<sub>hid</sub></td>
+                    <td>Final score</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h1>8. Results</h1>
+        <p>The empirical pattern was consistent across optimization styles. All optimized candidates scored strongly on public seeds, including the enlarged open set. Hidden-seed certification nevertheless revealed substantial semantic failures. The effect was strongest when the candidate employed heuristic assumptions aligned with shallow public regularities. In other words, more public data reduced variance but did not close the adaptation channel created by full visibility.</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Candidate</th>
+                    <th>Public-Train Pass</th>
+                    <th>Public-Expanded Pass</th>
+                    <th>Hidden Pass</th>
+                    <th>Median Latency (ms)</th>
+                    <th>Hidden Failure Lift</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Baseline-Interp</td>
+                    <td>100.0%</td>
+                    <td>100.0%</td>
+                    <td>99.9%</td>
+                    <td>4.81</td>
+                    <td>0.1×</td>
+                </tr>
+                <tr>
+                    <td>FastPath-A</td>
+                    <td>99.7%</td>
+                    <td>99.1%</td>
+                    <td>91.8%</td>
+                    <td>2.06</td>
+                    <td>9.1×</td>
+                </tr>
+                <tr>
+                    <td>Fuse-B</td>
+                    <td>99.4%</td>
+                    <td>98.8%</td>
+                    <td>88.6%</td>
+                    <td>1.72</td>
+                    <td>10.2×</td>
+                </tr>
+                <tr>
+                    <td>SpecLift-C</td>
+                    <td>98.9%</td>
+                    <td>98.5%</td>
+                    <td>84.3%</td>
+                    <td>1.54</td>
+                    <td>12.8×</td>
+                </tr>
+            </tbody>
+        </table>
+        <p>Family-level analysis localized the failures. <em>FastPath-A</em> degraded most severely on arithmetic overflow corridors, where integer-algebra identities were applied beyond their safe domain. <em>Fuse-B</em> failed primarily on deep composition, indicating that composition flattening rules were not semantically conservative. <em>SpecLift-C</em> exhibited the broadest failure surface, with particularly poor performance on erasure traps and nested recursion; its invariant inference was often accurate on public seeds but brittle under hidden combinations of aliasing and depth.</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Family</th>
+                    <th>FastPath-A Hidden Fail</th>
+                    <th>Fuse-B Hidden Fail</th>
+                    <th>SpecLift-C Hidden Fail</th>
+                    <th>Dominant defect mechanism</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Nested recursion</td>
+                    <td>5.8%</td>
+                    <td>8.9%</td>
+                    <td>17.6%</td>
+                    <td>Incorrect frontier contraction</td>
+                </tr>
+                <tr>
+                    <td>Deep composition</td>
+                    <td>6.1%</td>
+                    <td>15.4%</td>
+                    <td>10.7%</td>
+                    <td>Unsafe fusion and cancellation</td>
+                </tr>
+                <tr>
+                    <td>Erasure traps</td>
+                    <td>7.4%</td>
+                    <td>10.1%</td>
+                    <td>18.2%</td>
+                    <td>Discarding conditionally live subtrees</td>
+                </tr>
+                <tr>
+                    <td>Arithmetic overflow</td>
+                    <td>13.5%</td>
+                    <td>11.2%</td>
+                    <td>16.3%</td>
+                    <td>Assuming unbounded integer identities</td>
+                </tr>
+            </tbody>
+        </table>
+        <p>An additional ablation tested whether hidden-seed gains were merely due to route novelty. We revealed the same family frequencies and complexity histograms used by the hidden partition but withheld the seeds themselves. Candidate performance remained close to the original hidden scores, showing that the failure mode was not ignorance of the benchmark design. The decisive factor was inability to anticipate the exact structural instantiations induced by the hidden seeds.</p>
+    </section>
+
+    <section>
+        <h1>9. Discussion</h1>
+        <p>The results show why benchmark designers should distinguish between <em>knowledge of the distribution</em> and <em>knowledge of the sample</em>. Candidates may and should understand the distributional goals of the benchmark. What they must not know is the exact set of certification instances. Hidden seeds preserve this distinction elegantly because they permit open publication of the generator while reserving a large, rotating, high-entropy instance partition for scoring.</p>
+        <p>We emphasize that hidden seeds are not a substitute for strong benchmark design. A weak grammar with low structural entropy, duplicated traces, or poorly targeted adversarial families will not become robust merely by hiding its seeds. Likewise, hidden testing should not excuse opaque evaluation; the benchmark must publish enough about the generation process, family routing, and audit statistics to allow external scrutiny. FableBreaker adopts this philosophy by making the grammar, reference semantics, and family definitions public while treating only the certification salt and seed partition as confidential.</p>
+        <p>There are also operational considerations. Seed rotation should be scheduled to prevent slow leakage across repeated certification cycles. Family priors should be monitored for drift so that hidden evaluation remains aligned with declared benchmark scope. Finally, any hidden-seed protocol must maintain deterministic replay under internal auditing; otherwise disputes about certification outcomes become difficult to resolve. Deterministic seeded generation provides exactly this property: confidential during evaluation, reproducible during review.</p>
+    </section>
+
+    <section>
+        <h1>10. Limitations and Future Work</h1>
+        <p>Three limitations deserve attention. First, the present analysis assumes that hidden seeds are sampled independently within a certification window. Correlated routing, curriculum-style scheduling, or adaptive reweighting could change the effective detection probability and require martingale rather than iid concentration arguments. Second, our entropy calculations treat the adversary as uncertain over accepted AST traces but do not yet model side-channel inference from public scoreboards, latency curves, or partial trace disclosures. Third, the experiments analyze a fixed family set. Future generators may need richer families for stateful semantics, memory aliasing, or concurrency-sensitive evaluation where the hidden-seed abstraction interacts with scheduling nondeterminism.</p>
+        <p>These limitations suggest a broader research agenda. One direction is adaptive seed scheduling that reallocates hidden probability mass toward families with historically high public-hidden divergence. Another is compositional coverage analysis, where a theorem connects local coverage guarantees for substructures to global guarantees over full programs. A third is cryptographic attestation of hidden-seed provenance, allowing external auditors to verify that certification windows used genuinely unseen seeds without revealing the seeds themselves. Together, such extensions would move hidden-seed evaluation from an effective benchmark engineering practice toward a mature, formally grounded certification discipline.</p>
+    </section>
+
+    <section>
+        <h1>11. Conclusion</h1>
+        <p>Hidden-seed adversarial generation offers a principled mechanism for evaluator stress testing in AI code optimization benchmarks. By separating public task understanding from private certification instantiation, the protocol reduces overfitting to public benchmarks without sacrificing reproducibility. The FableBreaker implementation demonstrates that seeded stochastic AST generation, paired with family-aware routing and entropy auditing, exposes semantic defects that remain invisible on public suites. Theoretical analysis clarifies why: high-entropy hidden partitions raise the cost of memorization and increase the probability that defect-revealing instances are sampled. Empirical evaluation confirms the practical outcome: optimized candidates that appear nearly correct on public data often fail on hidden seeds.</p>
+    </section>
+
+    <section class="references">
+        <h1>References</h1>
+        <ol>
+            <li>Medina, F. (2026). Deterministic Test Generation via Seed-Controlled Stochastic AST Synthesis. <em>Journal of Reproducibility Methods</em>, 1(1), 1–28.</li>
+            <li>Medina, F. (2026). The Hidden-Seed Rotation Protocol: Temporal Integrity in Benchmark Certification. <em>Journal of Certification Systems</em>, 1(1), 1–24.</li>
+            <li>Medina, F. (2026). Game-Resistant Benchmark Design: Architectural Principles for Ungameable Evaluation. <em>Journal of Benchmark Architecture</em>, 1(1), 1–31.</li>
+            <li>Blum, A., &amp; Hardt, M. (2015). The Ladder: A Reliable Leaderboard for Machine Learning Competitions. <em>International Conference on Machine Learning</em>.</li>
+            <li>Dwork, C., Feldman, V., Hardt, M., Pitassi, T., Reingold, O., &amp; Roth, A. (2015). Preserving Statistical Validity in Adaptive Data Analysis. <em>STOC</em>.</li>
+            <li>Goodhart, C. (1975). Problems of Monetary Management: The U.K. Experience. In <em>Papers in Monetary Economics</em>.</li>
+            <li>Heule, M., &amp; Kullmann, O. (2017). The Science of Brute Force. <em>Communications of the ACM</em>, 60(8), 70–79.</li>
+            <li>Lamport, L. (1977). Proving the Correctness of Multiprocess Programs. <em>IEEE Transactions on Software Engineering</em>, 3(2), 125–143.</li>
+            <li>Manna, Z., &amp; Pnueli, A. (1995). <em>Temporal Verification of Reactive Systems</em>. Springer.</li>
+            <li>Nitpick Bench Consortium. (2024). Hidden Evaluation Splits for Code Intelligence Benchmarks. Technical Report NB-24-11.</li>
+            <li>Ribeiro, M. T., Singh, S., &amp; Guestrin, C. (2016). Why Should I Trust You? Explaining the Predictions of Any Classifier. <em>KDD</em>.</li>
+            <li>Russell, S., &amp; Norvig, P. (2021). <em>Artificial Intelligence: A Modern Approach</em> (4th ed.). Pearson.</li>
+        </ol>
+    </section>
+</article>
+</body>
+</html>
