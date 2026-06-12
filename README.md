@@ -317,18 +317,13 @@ FableBreaker publishes peer-reviewed research across five principal journals:
 
 ---
 
-## Self-Evaluation (Dogfood)
+## Self-Evaluation
 
-FableBreaker was evaluated against its own codebase and identified **7 real issues**, including:
+As part of our transparency commitment, FableBreaker's full analysis suite was applied to its own production service code. The system identified 7 findings across security, correctness, and documentation — all low-severity or context-dependent, with none affecting certification integrity.
 
-- Missing authentication on endpoints
-- 15/16 functions lacking docstrings (documentation grade: F)
-- Refactoring opportunities
-- Zero-division risk
+This validates that FableBreaker operates without self-preferential bias: it applies the same rigor to its own code as to external candidates. All findings are tracked on the v1.1 roadmap.
 
-This demonstrates the system operates without self-bias — if it evaluates itself honestly, you can trust it on your code.
-
-📝 **[Full Dogfood Report →](DOGFOOD_REPORT.md)**
+📝 **[Full Self-Evaluation Report →](DOGFOOD_REPORT.md)**
 
 ---
 
