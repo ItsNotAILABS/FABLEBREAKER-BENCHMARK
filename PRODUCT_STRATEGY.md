@@ -1,5 +1,9 @@
 # FableBreaker Product Strategy
 
+> **Internal document — strategic positioning, audience analysis, and go-to-market framing.**
+
+---
+
 ## Strategic Read
 
 FableBreaker is correctness-first certification for AI/runtime/compiler speed claims.

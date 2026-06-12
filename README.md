@@ -329,7 +329,9 @@ This validates that FableBreaker operates without self-preferential bias: it app
 
 ## Contributing
 
-Contributions are welcome via pull request. Accepted contribution types include:
+Contributions are welcome via pull request. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for guidelines.
+
+Accepted contribution types include:
 
 - New candidate implementations
 - Adversarial family definitions
