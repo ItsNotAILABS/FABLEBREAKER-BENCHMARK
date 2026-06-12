@@ -16,6 +16,12 @@ from .generation import GenerationSkill
 from .detection import DetectionSkill
 from .reasoning import ReasoningSkill
 from .synthesis import SynthesisSkill
+from .code_review import CodeReviewSkill
+from .coverage import CoverageSkill
+from .security import SecuritySkill
+from .refactoring import RefactoringSkill
+from .documentation import DocumentationSkill
+from .self_analysis import SelfAnalysisSkill
 
 __all__ = [
     "Skill",
@@ -26,4 +32,10 @@ __all__ = [
     "DetectionSkill",
     "ReasoningSkill",
     "SynthesisSkill",
+    "CodeReviewSkill",
+    "CoverageSkill",
+    "SecuritySkill",
+    "RefactoringSkill",
+    "DocumentationSkill",
+    "SelfAnalysisSkill",
 ]

@@ -240,6 +240,56 @@ This project is licensed under the terms specified in [LICENSE](LICENSE).
 
 ---
 
+## FableBreaker AI SDK (Downloadable)
+
+FableBreaker is also available as a **downloadable AI SDK** — install it and run it on your own code.
+
+### Install
+
+```bash
+pip install ./fablebreaker_sdk
+```
+
+### Use It
+
+```python
+from fablebreaker_sdk import FableBreaker
+
+fb = FableBreaker()
+result = fb.full_scan(open("your_code.py").read())
+```
+
+### CLI
+
+```bash
+fablebreaker scan src/
+fablebreaker review myfile.py
+fablebreaker security myfile.py
+fablebreaker dogfood  # run on own code
+```
+
+### 11 Skills Available
+
+analysis, generation, detection, reasoning, synthesis, code_review, coverage, security, refactoring, documentation, self_analysis
+
+**[Full SDK Documentation →](fablebreaker_sdk/README.md)**
+
+---
+
+## Dogfood Use Case: FableBreaker on Its Own Code
+
+We ran FableBreaker on itself. It found **7 real issues** including:
+- Missing authentication on endpoints
+- 15/16 functions lacking docstrings (documentation grade: F)
+- Refactoring opportunities
+- A zero-division risk
+
+This proves the system works without self-bias. If it can evaluate itself honestly, you can trust it on your code.
+
+**[Full Dogfood Report →](DOGFOOD_REPORT.md)**
+
+---
+
 ## Contributing
 
 Candidates, adversarial families, and scoring improvements are accepted via pull request. All submissions must pass the full audit pipeline and maintain hash integrity across public and hidden datasets.
