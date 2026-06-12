@@ -2,12 +2,13 @@
 FableBreaker Library
 ====================
 
-A comprehensive Python library for AI evaluation benchmarks, testing,
-regulations, rules, foundations, protocols, governance, and emergent
-behavior detection.
+A comprehensive Python library for AI evaluation, intelligence, and
+certification. FableBreaker is not a benchmark — it is bigger than that.
+Benchmarks are data that FableBreaker Intelligence consumes.
 
 Modules
 -------
+- intelligence: The living intelligence layer (engines, skills, dataset)
 - benchmarks: Adversarial evaluation suites and scoring
 - tests: Test framework, validators, and integrity checks
 - regulations: AI compliance rules, standards, and audit checks
@@ -21,6 +22,7 @@ Modules
 __version__ = "1.0.0"
 __author__ = "ItsNotAI LABS"
 
+from . import intelligence
 from . import benchmarks
 from . import tests
 from . import regulations
@@ -31,6 +33,7 @@ from . import governance
 from . import emergent
 
 __all__ = [
+    "intelligence",
     "benchmarks",
     "tests",
     "regulations",
