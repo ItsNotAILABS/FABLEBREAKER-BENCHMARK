@@ -310,10 +310,11 @@ class FableBreaker:
 
         # Overall summary
         total_issues = sum(
-            r.get("output", {}).get("total_issues", 0) or
-            r.get("output", {}).get("total_findings", 0) or
-            r.get("output", {}).get("total_opportunities", 0) or 0
+            (r or {}).get("output", {}).get("total_issues", 0) or
+            (r or {}).get("output", {}).get("total_findings", 0) or
+            (r or {}).get("output", {}).get("total_opportunities", 0) or 0
             for r in results.values()
+            if r is not None
         )
 
         results["summary"] = {
