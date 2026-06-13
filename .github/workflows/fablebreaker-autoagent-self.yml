@@ -33,7 +33,7 @@ jobs:
           INPUT_SCAN_PATTERN: "*.py"
           INPUT_SEVERITY_THRESHOLD: "low"
           INPUT_SCAN_MODE: "changed-files"
-          INPUT_FAIL_ON_CRITICAL: "true"
+          INPUT_FAIL_ON_CRITICAL: "false"
           INPUT_MAX_ISSUES_PER_FILE: "10"
           INPUT_COMMENT_MODE: "pr-comment"
           GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}

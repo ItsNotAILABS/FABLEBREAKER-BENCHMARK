@@ -75,7 +75,7 @@ class TestEvidencePack(unittest.TestCase):
             "speedup_vs_reference": 1.5 if certified else 0.0,
             "candidate_median_ms": 0.5,
             "candidate_p95_ms": 1.0,
-            "family_diagnostics": {},
+            "family_breakdown": {},
         }
 
     def test_generate_certified_pack(self) -> None:
@@ -222,7 +222,7 @@ class TestRegressionMonitor(unittest.TestCase):
 
 
 class TestScorerFamilyDiagnostics(unittest.TestCase):
-    def test_score_produces_family_diagnostics(self) -> None:
+    def test_score_produces_family_breakdown(self) -> None:
         with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False, mode="w") as tmp:
             rng = random.Random(823)
             for idx in range(10):
@@ -231,14 +231,14 @@ class TestScorerFamilyDiagnostics(unittest.TestCase):
             path = Path(tmp.name)
         try:
             result = score(path, "candidates.baseline_candidate", repeat=1)
-            self.assertIn("family_diagnostics", result)
+            self.assertIn("family_breakdown", result)
             self.assertTrue(result["certified"])
-            diag = result["family_diagnostics"]
+            diag = result["family_breakdown"]
             self.assertGreater(len(diag), 0)
             for family_name, family_data in diag.items():
-                self.assertIn("cases", family_data)
-                self.assertIn("certified", family_data)
-                self.assertIn("speedup_vs_reference", family_data)
+                self.assertIn("count", family_data)
+                self.assertIn("correct", family_data)
+                self.assertIn("speedup", family_data)
         finally:
             path.unlink(missing_ok=True)
 

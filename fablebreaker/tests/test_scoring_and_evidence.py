@@ -32,17 +32,17 @@ class TestScorerWithBrokenCandidate(unittest.TestCase):
         finally:
             path.unlink(missing_ok=True)
 
-    def test_scorer_reports_family_diagnostics(self) -> None:
+    def test_scorer_reports_family_breakdown(self) -> None:
         path = self._write_dataset(50)
         try:
             result = score(path, "candidates.baseline_candidate", repeat=1)
-            diag = result["family_diagnostics"]
-            # All families should be certified with baseline
+            diag = result["family_breakdown"]
+            # All families should pass with baseline
             for family_name, family_data in diag.items():
-                self.assertTrue(family_data["certified"], f"{family_name} should be certified")
-                self.assertEqual(family_data["failed"], 0)
-                self.assertGreater(family_data["cases"], 0)
-                self.assertGreater(family_data["speedup_vs_reference"], 0)
+                self.assertEqual(family_data["correct"], family_data["count"],
+                                 f"{family_name} should have all correct")
+                self.assertGreater(family_data["count"], 0)
+                self.assertGreater(family_data["speedup"], 0)
         finally:
             path.unlink(missing_ok=True)
 
@@ -102,10 +102,10 @@ class TestEvidencePackIntegrity(unittest.TestCase):
 
         score1 = {"cases": 10, "correct": 10, "failed": 0, "certified": True,
                   "speedup_vs_reference": 2.0, "candidate_median_ms": 0.5,
-                  "candidate_p95_ms": 1.0, "family_diagnostics": {}}
+                  "candidate_p95_ms": 1.0, "family_breakdown": {}}
         score2 = {"cases": 10, "correct": 9, "failed": 1, "certified": False,
                   "speedup_vs_reference": 0.0, "candidate_median_ms": 0.5,
-                  "candidate_p95_ms": 1.0, "family_diagnostics": {}}
+                  "candidate_p95_ms": 1.0, "family_breakdown": {}}
 
         pack1 = generate_evidence_pack("c1", "", score1, score1, 823, 1701)
         pack2 = generate_evidence_pack("c1", "", score1, score2, 823, 1701)
@@ -116,7 +116,7 @@ class TestEvidencePackIntegrity(unittest.TestCase):
 
         score_data = {"cases": 10, "correct": 10, "failed": 0, "certified": True,
                       "speedup_vs_reference": 2.0, "candidate_median_ms": 0.5,
-                      "candidate_p95_ms": 1.0, "family_diagnostics": {}}
+                      "candidate_p95_ms": 1.0, "family_breakdown": {}}
 
         pack = generate_evidence_pack("c1", "ref123", score_data, score_data, 823, 1701,
                                       signing_secret="test-secret-key")
