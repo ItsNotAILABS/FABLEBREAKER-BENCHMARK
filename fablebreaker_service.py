@@ -229,7 +229,8 @@ class FableBreakerHandler(BaseHTTPRequestHandler):
             result["scoring_elapsed_seconds"] = round(elapsed, 3)
             self.reply(result)
         else:
-            self.reply({"ok": False, "error": output, "request_id": request_id}, status=500)
+            logger.error("Score request %s failed: %s", request_id, output)
+            self.reply({"ok": False, "error": "scoring failed", "request_id": request_id}, status=500)
 
     def _handle_post_score(self) -> None:
         size = int(self.headers.get("Content-Length", "0"))
