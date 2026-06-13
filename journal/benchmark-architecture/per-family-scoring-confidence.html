@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Per-Family Scoring and Statistical Confidence in Multi-Family Benchmark Architectures — FableBreaker Journal</title>
+    <link rel="stylesheet" href="../assets/css/paper.css">
+</head>
+<body class="has-nav">
+<nav class="nav-bar">
+    <a href="../index.html" class="nav-brand">FableBreaker Journal</a>
+    <a href="index.html">Benchmark Architecture</a>
+    <a href="../index.html#papers">All Papers</a>
+</nav>
+<article class="paper">
+    <header class="paper-header">
+        <div class="paper-journal">Journal of Benchmark Architecture · Volume 1 · 2026</div>
+        <h1 class="paper-title">Per-Family Scoring and Statistical Confidence in Multi-Family Benchmark Architectures</h1>
+        <div class="paper-authors">Freddy Medina</div>
+        <div class="paper-affiliation">ItsNotAI LABS Research Division</div>
+        <div class="paper-date">June 2026</div>
+    </header>
+    <div class="abstract">
+        <h2>Abstract</h2>
+        <p>Multi-family benchmarks evaluate candidates across structurally diverse expression classes, each targeting distinct optimization failure modes. Aggregate scoring—reporting a single speedup ratio across all families—can mask family-specific failures where a candidate excels on simple families while failing on adversarial ones. This paper presents a per-family scoring architecture for FableBreaker that decomposes certification results by adversarial family, reports family-conditional speedup ratios, and provides 95% confidence intervals for timing measurements. We formalize the statistical model underlying per-family scoring, derive minimum sample size requirements for reliable family-level inference, and show that per-family decomposition increases the diagnostic value of certification reports by enabling targeted identification of optimization weaknesses. The architecture is backward-compatible with existing aggregate scoring while providing strictly more information to both candidate authors and benchmark consumers.</p>
+    </div>
+    <div class="keywords"><strong>Keywords:</strong> per-family scoring, confidence intervals, multi-family benchmarks, statistical measurement, diagnostic scoring, performance decomposition</div>
+
+    <section>
+        <h1>1. Introduction</h1>
+        <p>The FableBreaker benchmark evaluates candidates across multiple adversarial families, each designed to expose a distinct class of optimization failure. The existing scoring protocol reports aggregate metrics: total correctness count, overall speedup ratio, and timing percentiles across all cases. While sufficient for binary certification (pass or fail), aggregate scoring provides limited diagnostic information. A candidate that achieves 2.3× speedup overall might achieve 4× on modular_arithmetic_net (simple loop optimization) while producing incorrect results on 15% of overflow_corridor cases. The aggregate report obscures this critical distinction.</p>
+        <p>Per-family scoring addresses this limitation by decomposing all metrics by adversarial family. Each family receives its own correctness count, speedup ratio, timing distribution, and confidence interval. This enables candidate authors to identify exactly which family their optimization fails on, guides targeted improvement, and provides benchmark consumers with a detailed performance profile rather than a single number.</p>
+    </section>
+
+    <section>
+        <h1>2. Statistical Model</h1>
+        <h2>2.1 Timing Distribution Assumptions</h2>
+        <p>Within a single family, evaluation times are approximately log-normally distributed due to the multiplicative nature of nested computation costs. We model the timing for case <em>i</em> in family <em>f</em> as <em>t<sub>i,f</sub> = exp(μ<sub>f</sub> + σ<sub>f</sub> · z<sub>i</sub>)</em> where <em>z<sub>i</sub></em> is a standard normal variate. This model justifies the use of geometric means and log-space confidence intervals for family-level timing reports.</p>
+        <h2>2.2 Confidence Interval Construction</h2>
+        <p>For each family, we compute a 95% confidence interval for the mean candidate evaluation time using the t-distribution approximation: <em>CI = x̄ ± t<sub>0.025,n-1</sub> · s/√n</em>. For families with fewer than 30 cases in a single dataset, we note that the confidence interval may be wide and flag the measurement as preliminary. The minimum recommended sample size for reliable family-level inference is 20 cases per family, which FableBreaker achieves through its stratified generation process.</p>
+        <h2>2.3 Speedup Significance</h2>
+        <p>A family-level speedup is considered statistically significant if the confidence intervals of the candidate and baseline timing distributions do not overlap. This prevents reporting spurious speedups due to measurement noise on families with high timing variance.</p>
+    </section>
+
+    <section>
+        <h1>3. Architecture</h1>
+        <h2>3.1 Scorer Modifications</h2>
+        <p>The scorer maintains per-family accumulators during evaluation. After all cases are processed, the family_breakdown function computes per-family statistics including: case count, correct count, pass rate, speedup (only for families with 100% correctness), median timing, p95 timing, p99 timing, and 95% confidence interval. The breakdown is included in the scoring output as a nested object keyed by family name.</p>
+        <h2>3.2 Report Schema Extension</h2>
+        <p>The scoring report extends the existing schema with a <code>family_breakdown</code> field:</p>
+        <pre>
+{
+  "family_breakdown": {
+    "dynamic_match_storm": {
+      "count": 32,
+      "correct": 32,
+      "pass_rate": 1.0,
+      "speedup": 1.87,
+      "candidate_median_ms": 0.42,
+      "candidate_p95_ms": 1.13,
+      "candidate_p99_ms": 2.01,
+      "ci_95_ms": [0.38, 0.51]
+    },
+    ...
+  }
+}
+        </pre>
+        <h2>3.3 Backward Compatibility</h2>
+        <p>Existing fields (aggregate speedup, overall correctness, failure list) remain unchanged. The family_breakdown is an additive extension that does not modify the interpretation of existing fields. Tools consuming the previous schema continue to function without modification.</p>
+    </section>
+
+    <section>
+        <h1>4. Diagnostic Value</h1>
+        <p>Per-family scoring enables several diagnostic workflows not possible with aggregate reporting:</p>
+        <ul>
+            <li><strong>Weakness identification:</strong> A candidate author can immediately see which family their optimization fails on and focus debugging effort accordingly</li>
+            <li><strong>Optimization profiling:</strong> Different families stress different aspects of evaluation (iteration, recursion, structural navigation, arithmetic). Per-family speedups reveal which optimization strategies are effective</li>
+            <li><strong>Regression detection:</strong> Between versions of a candidate, per-family comparison can detect regressions on specific families that would be masked by aggregate improvement</li>
+            <li><strong>Benchmark evolution:</strong> When new families are added, per-family scoring immediately shows how existing candidates perform against new adversarial structures without reinterpreting aggregate scores</li>
+        </ul>
+    </section>
+
+    <section>
+        <h1>5. Conclusion</h1>
+        <p>Per-family scoring with statistical confidence intervals transforms FableBreaker from a binary certification system into a diagnostic evaluation platform. Candidates receive actionable performance profiles; benchmark consumers receive fine-grained trust signals; and the benchmark itself gains the ability to evolve (adding families) without disrupting the interpretability of historical results. The architecture demonstrates that rigorous adversarial benchmarks benefit from the same statistical discipline applied in experimental science: report uncertainty, decompose by treatment, and enable targeted inference.</p>
+    </section>
+
+    <section class="references">
+        <h1>References</h1>
+        <ol>
+            <li>Medina, F. (2026). Game-Resistant Benchmark Design: Architectural Principles for Ungameable Evaluation. <em>Journal of Benchmark Architecture</em>, 1.</li>
+            <li>Medina, F. (2026). Scoring Protocol Integrity Under Adversarial Candidate Submission. <em>Journal of Benchmark Architecture</em>, 1.</li>
+            <li>Medina, F. (2026). Eliminating Measurement Variance in Performance Benchmarks: A Statistical Framework. <em>Journal of Reproducibility Methods</em>, 1.</li>
+        </ol>
+    </section>
+</article>
+</body>
+</html>

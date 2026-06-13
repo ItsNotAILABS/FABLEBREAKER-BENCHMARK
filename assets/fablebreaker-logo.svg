@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" fill="none">
+  <defs>
+    <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f0c29"/>
+      <stop offset="50%" style="stop-color:#302b63"/>
+      <stop offset="100%" style="stop-color:#24243e"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00d2ff"/>
+      <stop offset="100%" style="stop-color:#7b2ff7"/>
+    </linearGradient>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#00d2ff"/>
+      <stop offset="100%" style="stop-color:#7b2ff7"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="800" height="200" rx="16" fill="url(#brandGrad)"/>
+  <!-- Shield Icon -->
+  <g transform="translate(40, 30)">
+    <!-- Outer shield -->
+    <path d="M70 10 L130 30 L130 80 C130 120 100 140 70 150 C40 140 10 120 10 80 L10 30 Z" 
+          fill="none" stroke="url(#shieldGrad)" stroke-width="4"/>
+    <!-- Inner checkmark/break symbol -->
+    <path d="M50 75 L65 90 L95 55" fill="none" stroke="#00d2ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Break line through -->
+    <line x1="45" y1="105" x2="95" y2="105" stroke="#7b2ff7" stroke-width="3" stroke-linecap="round"/>
+    <!-- Circuit nodes -->
+    <circle cx="30" cy="50" r="3" fill="#00d2ff" opacity="0.7"/>
+    <circle cx="110" cy="50" r="3" fill="#7b2ff7" opacity="0.7"/>
+    <circle cx="70" cy="25" r="3" fill="#00d2ff" opacity="0.7"/>
+    <!-- Circuit lines -->
+    <line x1="30" y1="50" x2="10" y2="30" stroke="#00d2ff" stroke-width="1" opacity="0.4"/>
+    <line x1="110" y1="50" x2="130" y2="30" stroke="#7b2ff7" stroke-width="1" opacity="0.4"/>
+  </g>
+  <!-- Text: FABLEBREAKER -->
+  <text x="200" y="105" font-family="'Inter', 'SF Pro Display', -apple-system, sans-serif" font-size="52" font-weight="800" letter-spacing="3">
+    <tspan fill="#ffffff">FABLE</tspan><tspan fill="url(#accentGrad)">BREAKER</tspan>
+  </text>
+  <!-- Subtitle -->
+  <text x="200" y="140" font-family="'Inter', 'SF Pro Display', -apple-system, sans-serif" font-size="16" font-weight="400" fill="#a0a0b0" letter-spacing="4">
+    CORRECTNESS-FIRST INTELLIGENCE SYSTEM
+  </text>
+  <!-- Tagline -->
+  <text x="200" y="170" font-family="'Inter', 'SF Pro Display', -apple-system, sans-serif" font-size="12" font-weight="300" fill="#6a6a7a" letter-spacing="2">
+    EVALUATE · CERTIFY · HOLD ACCOUNTABLE
+  </text>
+  <!-- Decorative accent line -->
+  <rect x="200" y="148" width="120" height="2" rx="1" fill="url(#accentGrad)" opacity="0.6"/>
+</svg>

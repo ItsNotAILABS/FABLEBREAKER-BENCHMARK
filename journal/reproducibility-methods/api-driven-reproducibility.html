@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API-Driven Reproducibility: HTTP Service Architectures for Benchmark Automation — FableBreaker Journal</title>
+    <link rel="stylesheet" href="../assets/css/paper.css">
+</head>
+<body class="has-nav">
+<nav class="nav-bar">
+    <a href="../index.html" class="nav-brand">FableBreaker Journal</a>
+    <a href="index.html">Reproducibility Methods</a>
+    <a href="../index.html#papers">All Papers</a>
+</nav>
+<article class="paper">
+    <header class="paper-header">
+        <div class="paper-journal">Journal of Reproducibility Methods · Volume 1 · 2026</div>
+        <h1 class="paper-title">API-Driven Reproducibility: HTTP Service Architectures for Benchmark Automation</h1>
+        <div class="paper-authors">Freddy Medina</div>
+        <div class="paper-affiliation">ItsNotAI LABS Research Division</div>
+        <div class="paper-date">June 2026</div>
+    </header>
+    <div class="abstract">
+        <h2>Abstract</h2>
+        <p>Reproducible benchmarks require not only deterministic computation but also standardized interfaces for invoking generation, scoring, and certification workflows. Command-line tools, while effective for manual operation, introduce variability through shell environments, working directory assumptions, and argument parsing differences across platforms. This paper presents an HTTP service architecture for FableBreaker that provides a versioned, self-documenting API for all benchmark operations. The service implements rate limiting, CORS support for browser-based tooling, structured error responses, request tracing, and backward-compatible route evolution. We describe the design principles—statelessness, idempotency of read operations, explicit versioning, and defense against abuse—and demonstrate that API-driven benchmarking achieves equivalent reproducibility to command-line invocation while enabling integration with CI/CD pipelines, web dashboards, and automated certification workflows without platform-specific scripting.</p>
+    </div>
+    <div class="keywords"><strong>Keywords:</strong> HTTP API, reproducibility, benchmark automation, service architecture, rate limiting, versioned endpoints, CI/CD integration</div>
+
+    <section>
+        <h1>1. Introduction</h1>
+        <p>The standard interface for benchmark systems is the command-line tool. Users invoke a generator with specific arguments, pipe output to a scorer, and collect results from a report file. This workflow is reproducible in principle—given identical inputs, the same outputs are produced—but fragile in practice. Shell environments differ between platforms, relative path resolution depends on working directory, and argument parsing may vary between Python versions or OS configurations. More critically, command-line interfaces resist automation: integrating a benchmark into a CI/CD pipeline requires shell scripting that is itself a source of irreproducibility.</p>
+        <p>An HTTP service interface addresses these limitations by providing a platform-independent, self-documenting, and programmatically accessible interface to benchmark operations. Any HTTP client—regardless of language, platform, or environment—can invoke the same operations with identical semantics. The service encapsulates all path resolution, environment configuration, and subprocess management internally, exposing only the semantic parameters of each operation.</p>
+    </section>
+
+    <section>
+        <h1>2. Design Principles</h1>
+        <h2>2.1 Versioned Routes</h2>
+        <p>All API endpoints are prefixed with a version identifier (<code>/api/v1/</code>). Legacy routes without the version prefix remain functional for backward compatibility but are documented as deprecated. This enables the service to evolve its interface without breaking existing integrations.</p>
+        <h2>2.2 Statelessness</h2>
+        <p>Each request is self-contained. The service does not maintain session state between requests. This ensures that any request can be replayed independently for debugging or verification, and that multiple clients can interact with the service concurrently without interference.</p>
+        <h2>2.3 Idempotency</h2>
+        <p>Read operations (health, manifest, score, status) are idempotent: invoking them multiple times produces the same result (modulo timing measurements, which are inherently non-deterministic). Write operations (generate) are deterministic given the same seed parameters, making them effectively idempotent for reproducibility purposes.</p>
+        <h2>2.4 Defense Against Abuse</h2>
+        <p>Rate limiting prevents resource exhaustion from automated clients. The service enforces a configurable request-per-window limit per client IP address. Requests exceeding the limit receive a 429 response with retry information. This protects shared benchmark infrastructure from denial-of-service while remaining transparent to well-behaved clients.</p>
+    </section>
+
+    <section>
+        <h1>3. Service Architecture</h1>
+        <h2>3.1 Endpoint Catalog</h2>
+        <p>The FableBreaker service exposes the following versioned endpoints:</p>
+        <ul>
+            <li><code>GET /api/v1/health</code> — Service health with version and timestamp</li>
+            <li><code>GET /api/v1/manifest</code> — Benchmark suite manifest</li>
+            <li><code>GET /api/v1/status</code> — Available datasets, reports, and configuration</li>
+            <li><code>GET /api/v1/candidates</code> — Registered candidate modules</li>
+            <li><code>GET /api/v1/families</code> — Available adversarial families with descriptions</li>
+            <li><code>GET /api/v1/score</code> — Score a candidate (query parameters)</li>
+            <li><code>POST /api/v1/score</code> — Score a candidate (JSON body)</li>
+            <li><code>POST /api/v1/generate</code> — Generate a dataset from seed parameters</li>
+        </ul>
+        <h2>3.2 Response Format</h2>
+        <p>All responses are JSON with consistent structure. Successful responses include the requested data directly. Error responses include an <code>error</code> field with a machine-readable error code and a human-readable message. All responses include service version and request timestamp headers for audit trail purposes.</p>
+        <h2>3.3 CORS Support</h2>
+        <p>The service includes full CORS support (Access-Control-Allow-Origin, preflight OPTIONS handling) to enable browser-based dashboard and visualization tools to interact with the benchmark service directly without proxy infrastructure.</p>
+    </section>
+
+    <section>
+        <h1>4. CI/CD Integration Patterns</h1>
+        <p>The HTTP interface enables several automation patterns:</p>
+        <ul>
+            <li><strong>Pull request gates:</strong> A CI job starts the service, submits the candidate for scoring, and fails the build if certification is not achieved</li>
+            <li><strong>Nightly certification:</strong> A scheduled workflow generates fresh hidden-seed datasets and scores all registered candidates, publishing results to a dashboard</li>
+            <li><strong>Regression alerts:</strong> Per-family speedup comparisons between commits detect performance regressions on specific adversarial families</li>
+            <li><strong>Multi-platform validation:</strong> The same HTTP requests can be issued from any platform, enabling cross-platform reproducibility verification</li>
+        </ul>
+    </section>
+
+    <section>
+        <h1>5. Conclusion</h1>
+        <p>HTTP service architectures provide a reproducibility layer above the computational layer. While deterministic generation and hash verification ensure that results are correct, the service interface ensures that the process of obtaining those results is standardized, automated, and platform-independent. The FableBreaker service demonstrates that benchmark automation does not require sacrificing rigor: every service operation maps directly to a well-defined benchmark primitive with identical semantics to its command-line counterpart.</p>
+    </section>
+
+    <section class="references">
+        <h1>References</h1>
+        <ol>
+            <li>Medina, F. (2026). Deterministic Test Generation via Seed-Controlled Stochastic AST Synthesis. <em>Journal of Reproducibility Methods</em>, 1.</li>
+            <li>Medina, F. (2026). Eliminating Measurement Variance in Performance Benchmarks: A Statistical Framework. <em>Journal of Reproducibility Methods</em>, 1.</li>
+            <li>Medina, F. (2026). Game-Resistant Benchmark Design: Architectural Principles for Ungameable Evaluation. <em>Journal of Benchmark Architecture</em>, 1.</li>
+        </ol>
+    </section>
+</article>
+</body>
+</html>

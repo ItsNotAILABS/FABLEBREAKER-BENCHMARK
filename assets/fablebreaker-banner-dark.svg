@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0a0f"/>
+      <stop offset="50%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#0a0a0f"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00d2ff"/>
+      <stop offset="100%" style="stop-color:#7b2ff7"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#00d2ff"/>
+      <stop offset="50%" style="stop-color:#3a7bd5"/>
+      <stop offset="100%" style="stop-color:#7b2ff7"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- Background -->
+  <rect width="1200" height="300" fill="url(#bg)"/>
+  <!-- Grid pattern -->
+  <g opacity="0.05" stroke="#ffffff" stroke-width="0.5">
+    <line x1="0" y1="50" x2="1200" y2="50"/><line x1="0" y1="100" x2="1200" y2="100"/>
+    <line x1="0" y1="150" x2="1200" y2="150"/><line x1="0" y1="200" x2="1200" y2="200"/>
+    <line x1="0" y1="250" x2="1200" y2="250"/>
+    <line x1="100" y1="0" x2="100" y2="300"/><line x1="200" y1="0" x2="200" y2="300"/>
+    <line x1="300" y1="0" x2="300" y2="300"/><line x1="400" y1="0" x2="400" y2="300"/>
+    <line x1="500" y1="0" x2="500" y2="300"/><line x1="600" y1="0" x2="600" y2="300"/>
+    <line x1="700" y1="0" x2="700" y2="300"/><line x1="800" y1="0" x2="800" y2="300"/>
+    <line x1="900" y1="0" x2="900" y2="300"/><line x1="1000" y1="0" x2="1000" y2="300"/>
+    <line x1="1100" y1="0" x2="1100" y2="300"/>
+  </g>
+  <!-- Decorative orbs -->
+  <circle cx="100" cy="50" r="80" fill="#00d2ff" opacity="0.03"/>
+  <circle cx="1100" cy="250" r="100" fill="#7b2ff7" opacity="0.04"/>
+  <!-- Shield Icon -->
+  <g transform="translate(80, 60)" filter="url(#glow)">
+    <path d="M90 10 L165 40 L165 100 C165 155 130 180 90 195 C50 180 15 155 15 100 L15 40 Z" 
+          fill="none" stroke="url(#shield)" stroke-width="3.5"/>
+    <path d="M60 100 L80 120 L125 70" fill="none" stroke="#00d2ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="50" y1="145" x2="130" y2="145" stroke="#7b2ff7" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+    <!-- Nodes -->
+    <circle cx="35" cy="60" r="4" fill="#00d2ff" opacity="0.6"/>
+    <circle cx="145" cy="60" r="4" fill="#7b2ff7" opacity="0.6"/>
+    <circle cx="90" cy="25" r="4" fill="#00d2ff" opacity="0.6"/>
+    <circle cx="25" cy="110" r="3" fill="#3a7bd5" opacity="0.4"/>
+    <circle cx="155" cy="110" r="3" fill="#3a7bd5" opacity="0.4"/>
+  </g>
+  <!-- Main Title -->
+  <text x="340" y="140" font-family="'Inter', 'SF Pro Display', -apple-system, sans-serif" font-size="72" font-weight="900" letter-spacing="4">
+    <tspan fill="#ffffff">FABLE</tspan><tspan fill="url(#accent)">BREAKER</tspan>
+  </text>
+  <!-- Subtitle -->
+  <text x="340" y="185" font-family="'Inter', 'SF Pro Display', -apple-system, sans-serif" font-size="20" font-weight="500" fill="#8888aa" letter-spacing="6">
+    CORRECTNESS-FIRST INTELLIGENCE SYSTEM
+  </text>
+  <!-- Description -->
+  <text x="340" y="225" font-family="'Inter', 'SF Pro Display', -apple-system, sans-serif" font-size="14" font-weight="300" fill="#5a5a7a" letter-spacing="1.5">
+    Evaluate · Certify · Hold AI Systems Accountable
+  </text>
+  <!-- Bottom accent line -->
+  <rect x="340" y="245" width="200" height="2" rx="1" fill="url(#accent)" opacity="0.5"/>
+  <!-- Version tag -->
+  <rect x="340" y="258" width="60" height="20" rx="10" fill="#1a1a2e" stroke="url(#accent)" stroke-width="1"/>
+  <text x="356" y="272" font-family="'Inter', sans-serif" font-size="10" font-weight="600" fill="#00d2ff">v2.0</text>
+  <!-- Border glow -->
+  <rect x="1" y="1" width="1198" height="298" rx="0" fill="none" stroke="url(#accent)" stroke-width="1" opacity="0.15"/>
+</svg>

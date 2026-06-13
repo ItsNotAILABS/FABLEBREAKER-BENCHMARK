@@ -9,7 +9,7 @@ from typing import Any
 from .astlang import digest, evaluate
 
 
-TAGS = ("A", "B", "C", "DEL", "KEEP")
+TAGS = ("A", "B", "C", "DEL", "KEEP", "NIL", "WRAP", "SKIP")
 
 
 def lit(value: int) -> dict[str, Any]:
@@ -24,6 +24,18 @@ def binop(op: str, left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any
     return {"op": op, "left": left, "right": right}
 
 
+def neg(expr: dict[str, Any]) -> dict[str, Any]:
+    return {"op": "neg", "value": expr}
+
+
+def abs_op(expr: dict[str, Any]) -> dict[str, Any]:
+    return {"op": "abs", "value": expr}
+
+
+def if_zero(cond: dict[str, Any], then: dict[str, Any], else_: dict[str, Any]) -> dict[str, Any]:
+    return {"op": "if_zero", "cond": cond, "then": then, "else": else_}
+
+
 def make_case(rng: random.Random, idx: int, split: str) -> dict[str, Any]:
     family = rng.choice(
         [
@@ -33,6 +45,8 @@ def make_case(rng: random.Random, idx: int, split: str) -> dict[str, Any]:
             "branch_balance",
             "deep_pair_projection",
             "modular_arithmetic_net",
+            "overflow_corridor",
+            "nested_conditional_cascade",
         ]
     )
     size = rng.randint(12, 70) if split == "public" else rng.randint(25, 120)
@@ -169,6 +183,60 @@ def modular_arithmetic_net(rng: random.Random, size: int) -> dict[str, Any]:
     }
 
 
+def overflow_corridor(rng: random.Random, size: int) -> dict[str, Any]:
+    """Generate expressions that push values through overflow-prone corridors.
+
+    Tests candidates that may incorrectly truncate or clamp large integers.
+    Uses alternating multiplication and subtraction with large constants.
+    """
+    expr: dict[str, Any] = lit(rng.randint(2, 2**16))
+    for i in range(size):
+        choice = rng.choice(["grow", "shrink", "flip", "fold"])
+        if choice == "grow":
+            expr = binop("mul", expr, lit(rng.randint(2, 127)))
+        elif choice == "shrink":
+            expr = binop("mod", expr, lit(rng.choice([65537, 104729, 1000003])))
+        elif choice == "flip":
+            expr = binop("xor", expr, lit(rng.randint(2**15, 2**31)))
+        else:
+            expr = binop("sub", expr, lit(rng.randint(1, 2**20)))
+        if i % 7 == 0:
+            expr = abs_op(expr)
+        if i % 11 == 0:
+            expr = neg(expr)
+    return expr
+
+
+def nested_conditional_cascade(rng: random.Random, size: int) -> dict[str, Any]:
+    """Generate deeply nested if_zero cascades with erasure traps.
+
+    Tests candidates that may incorrectly evaluate both branches of conditionals
+    or fail to respect zero-testing semantics across deeply nested structures.
+    Uses let-bindings to keep evaluation cost linear.
+    """
+    expr: dict[str, Any] = lit(rng.randint(0, 50))
+    for i in range(size):
+        name = f"v{i}"
+        strategy = rng.choice(["if_zero", "if_zero", "erase_gate"])
+        if strategy == "if_zero":
+            then_val = binop("add", var(name), lit(rng.randint(1, 50)))
+            else_val = binop("xor", var(name), lit(rng.randint(1, 255)))
+            body = if_zero(
+                binop("mod", var(name), lit(rng.choice([2, 3, 5, 7]))),
+                then_val,
+                else_val,
+            )
+            expr = {"op": "let", "name": name, "value": expr, "body": body}
+        else:
+            body = {
+                "op": "erase",
+                "value": {"op": "bomb", "label": f"cascade-trap-{i}"},
+                "body": binop(rng.choice(["add", "xor"]), var(name), lit(i + 7)),
+            }
+            expr = {"op": "let", "name": name, "value": expr, "body": body}
+    return expr
+
+
 CASE_BUILDERS = {
     "dynamic_match_storm": dynamic_match_storm,
     "del_erasure_trap": del_erasure_trap,
@@ -176,6 +244,8 @@ CASE_BUILDERS = {
     "branch_balance": branch_balance,
     "deep_pair_projection": deep_pair_projection,
     "modular_arithmetic_net": modular_arithmetic_net,
+    "overflow_corridor": overflow_corridor,
+    "nested_conditional_cascade": nested_conditional_cascade,
 }
 
 
