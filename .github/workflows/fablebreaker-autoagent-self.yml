@@ -1,0 +1,40 @@
+# FableBreaker AutoAgent — self-hosted on this repo (dogfooding)
+# Runs FableBreaker analysis on every PR to this repository.
+
+name: FableBreaker AutoAgent (Self)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "**.py"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  autoagent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Run FableBreaker AutoAgent
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          INPUT_SCAN_PATTERN: "*.py"
+          INPUT_SEVERITY_THRESHOLD: "low"
+          INPUT_SCAN_MODE: "changed-files"
+          INPUT_FAIL_ON_CRITICAL: "false"
+          INPUT_MAX_ISSUES_PER_FILE: "10"
+          INPUT_COMMENT_MODE: "pr-comment"
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python fablebreaker-autoagent/agent.py

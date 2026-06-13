@@ -1,0 +1,85 @@
+# FableBreaker AutoAgent — Reusable Workflow
+# Anyone can use this in their repos by referencing this workflow.
+#
+# Usage in your repo's .github/workflows/fablebreaker.yml:
+#
+#   name: FableBreaker AutoAgent
+#   on:
+#     pull_request:
+#       types: [opened, synchronize]
+#   jobs:
+#     review:
+#       uses: ItsNotAILABS/FABLEBREAKER-BENCHMARK/.github/workflows/fablebreaker-autoagent.yml@main
+#       with:
+#         scan-pattern: "*.py"
+#         severity-threshold: "medium"
+
+name: FableBreaker AutoAgent
+
+on:
+  workflow_call:
+    inputs:
+      scan-pattern:
+        description: "Glob pattern for files to analyze"
+        type: string
+        default: "*.py"
+      severity-threshold:
+        description: "Minimum severity to report: low, medium, high, critical"
+        type: string
+        default: "low"
+      scan-mode:
+        description: "What to scan: changed-files, full-repo, directory"
+        type: string
+        default: "changed-files"
+      target-directory:
+        description: "Directory to scan when scan-mode is 'directory'"
+        type: string
+        default: "."
+      fail-on-critical:
+        description: "Fail the check if critical issues are found"
+        type: boolean
+        default: true
+      max-issues-per-file:
+        description: "Maximum issues to report per file"
+        type: number
+        default: 10
+
+jobs:
+  fablebreaker-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout caller repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout FableBreaker
+        uses: actions/checkout@v4
+        with:
+          repository: ItsNotAILABS/FABLEBREAKER-BENCHMARK
+          path: .fablebreaker
+          sparse-checkout: |
+            fablebreaker-autoagent
+            fablebreaker_sdk
+            fablebreaker_lib
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Run FableBreaker AutoAgent
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          INPUT_SCAN_PATTERN: ${{ inputs.scan-pattern }}
+          INPUT_SEVERITY_THRESHOLD: ${{ inputs.severity-threshold }}
+          INPUT_SCAN_MODE: ${{ inputs.scan-mode }}
+          INPUT_TARGET_DIRECTORY: ${{ inputs.target-directory }}
+          INPUT_FAIL_ON_CRITICAL: ${{ inputs.fail-on-critical }}
+          INPUT_MAX_ISSUES_PER_FILE: ${{ inputs.max-issues-per-file }}
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+          PYTHONPATH: .fablebreaker
+        run: python .fablebreaker/fablebreaker-autoagent/agent.py

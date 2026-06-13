@@ -1,0 +1,47 @@
+[project]
+name = "fablebreaker-lib"
+version = "1.0.0"
+description = "Comprehensive Python library for AI evaluation benchmarks, testing, regulations, rules, foundations, protocols, governance, and emergent behavior detection."
+authors = [
+    {name = "ItsNotAI LABS"},
+]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = []
+keywords = [
+    "ai",
+    "benchmarks",
+    "evaluation",
+    "governance",
+    "regulations",
+    "safety",
+    "certification",
+    "adversarial",
+    "testing",
+    "protocols",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Testing",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+[project.urls]
+Repository = "https://github.com/ItsNotAILABS/FABLEBREAKER-BENCHMARK"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["fablebreaker_lib*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests_lib"]

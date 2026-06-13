@@ -1,0 +1,85 @@
+name: FableBreaker Audit
+
+on:
+  pull_request:
+    paths:
+      - 'fablebreaker/candidates/**'
+      - 'fablebreaker/fablebreaker/**'
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: 'Candidate module path (e.g., candidates.baseline_candidate)'
+        required: true
+        default: 'candidates.baseline_candidate'
+      count:
+        description: 'Number of cases per split'
+        required: false
+        default: '240'
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Run integrity tests
+      working-directory: fablebreaker
+      run: |
+        python -m unittest discover -s tests -v
+
+    - name: Run claim audit
+      working-directory: fablebreaker
+      run: |
+        CANDIDATE="${{ github.event.inputs.candidate || 'candidates.baseline_candidate' }}"
+        COUNT="${{ github.event.inputs.count || '240' }}"
+        python -m tools.claim_audit \
+          --candidate "$CANDIDATE" \
+          --count "$COUNT" \
+          --public-seed 823 \
+          --operator "github-actions"
+
+    - name: Upload evidence pack
+      uses: actions/upload-artifact@v4
+      with:
+        name: evidence-pack-py${{ matrix.python-version }}
+        path: fablebreaker/reports/evidence-pack-*.json
+        retention-days: 90
+
+    - name: Upload score reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: score-reports-py${{ matrix.python-version }}
+        path: fablebreaker/reports/score-*.json
+        retention-days: 90
+
+    - name: Check certification status
+      working-directory: fablebreaker
+      run: |
+        PACK=$(ls -t reports/evidence-pack-*.json 2>/dev/null | head -1)
+        if [ -z "$PACK" ]; then
+          echo "::error::No evidence pack generated"
+          exit 1
+        fi
+        CERTIFIED=$(python -c "import json; print(json.load(open('$PACK'))['overall_certified'])")
+        SPEEDUP=$(python -c "import json; print(json.load(open('$PACK'))['overall_speedup'])")
+        echo "## FableBreaker Audit Result" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Certified | $CERTIFIED |" >> $GITHUB_STEP_SUMMARY
+        echo "| Speedup | ${SPEEDUP}x |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ "$CERTIFIED" != "True" ]; then
+          echo "::error::Candidate failed certification - correctness errors detected"
+          exit 1
+        fi
+        echo "✅ Candidate passed correctness audit with ${SPEEDUP}x speedup"
