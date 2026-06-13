@@ -18,6 +18,7 @@
 
 - [Overview](#overview)
 - [Key Features](#key-features)
+- [FableBreaker AutoAgent](#fablebreaker-autoagent)
 - [Architecture](#architecture)
 - [Getting Started](#getting-started)
 - [Certification Protocol](#certification-protocol)
@@ -51,6 +52,34 @@ Any candidate that produces a single incorrect output on any hidden test case re
 - **Multi-agent batch evaluation** — test 30–100+ agents in parallel with a single command
 - **HTTP service interface** — programmatic access for CI/CD integration
 - **Downloadable SDK** — install locally and evaluate your own code
+- **AutoAgent for GitHub** — automated PR reviews like CodeRabbit, but correctness-first
+
+---
+
+## FableBreaker AutoAgent
+
+**Automated adversarial code review for every PR** — add one workflow file and get FableBreaker analysis on all pull requests. Works on any repository.
+
+### Install on Your Repo (30 seconds)
+
+Create `.github/workflows/fablebreaker.yml`:
+
+```yaml
+name: FableBreaker AutoAgent
+on:
+  pull_request:
+    types: [opened, synchronize]
+jobs:
+  review:
+    uses: ItsNotAILABS/FABLEBREAKER-BENCHMARK/.github/workflows/fablebreaker-autoagent.yml@main
+    with:
+      scan-pattern: "*.py"
+      severity-threshold: "medium"
+```
+
+Every PR now gets automated analysis with verdicts, severity scores, and per-file findings posted as comments.
+
+🤖 **[Full AutoAgent Documentation →](fablebreaker-autoagent/README.md)**
 
 ---
 
@@ -275,6 +304,10 @@ FABLEBREAKER-BENCHMARK/
 │   ├── tests/                       # Integrity tests
 │   └── tools/                       # Audit and utility scripts
 ├── fablebreaker_sdk/                # Downloadable SDK package
+├── fablebreaker-autoagent/          # GitHub Action — automated PR reviews
+│   ├── action.yml                   # Composite action definition
+│   ├── agent.py                     # AutoAgent engine
+│   └── README.md                    # Usage documentation
 ├── benchmark-certification/         # Certification infrastructure
 │   ├── suites/                      # Suite implementations
 │   ├── services/                    # HTTP service layer
